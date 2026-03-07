@@ -38,11 +38,15 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      error: "UNKNOWN",
-      message: `HTTP ${response.status}`,
-    }));
-    throw new Error(error.message ?? `Request failed: ${response.status}`);
+    let errorMessage = `Request failed: ${response.status}`;
+    try {
+      const error = await response.json();
+      errorMessage = error.message ?? error.error ?? errorMessage;
+    } catch {
+      // Response is not JSON (e.g., 500 HTML error page)
+      // Keep the generic HTTP error message
+    }
+    throw new Error(errorMessage);
   }
 
   return response.json() as Promise<T>;
