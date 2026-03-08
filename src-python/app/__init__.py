@@ -4,6 +4,17 @@ from flask import Flask, jsonify
 def create_app():
     app = Flask(__name__)
 
+    # Initialize database and run migrations
+    from app.database import get_engine
+    from migrations.runner import run_migrations
+
+    try:
+        engine = get_engine()
+        run_migrations(engine)
+    except RuntimeError as exc:
+        app.logger.error("Database initialization failed: %s", exc)
+        raise  # Propagate so Tauri detects the crash and shows error screen
+
     # Register blueprints
     from app.routes.health import health_bp
 

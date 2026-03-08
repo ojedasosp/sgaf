@@ -1,6 +1,7 @@
 /// Flask sidecar lifecycle management.
 /// Spawns the PyInstaller binary, polls the health endpoint,
 /// and emits backend-ready or backend-error events to the frontend.
+use std::fs;
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -49,11 +50,35 @@ pub async fn start_backend(app: AppHandle) {
     };
     let health_url = format!("http://127.0.0.1:{}/api/v1/health", port);
 
-    // Spawn sidecar binary with FLASK_PORT env var so Flask listens on the right port
+    // Resolve DB path: {AppData}/sgaf/sgaf.db
+    let db_path = match app.path().app_data_dir() {
+        Ok(app_data) => {
+            let sgaf_dir = app_data.join("sgaf");
+            if let Err(e) = fs::create_dir_all(&sgaf_dir) {
+                app.emit("backend-error", &format!("Cannot create app data directory: {}", e))
+                    .ok();
+                return;
+            }
+            sgaf_dir.join("sgaf.db").to_string_lossy().to_string()
+        }
+        Err(e) => {
+            app.emit(
+                "backend-error",
+                &format!("Cannot resolve app data directory: {}", e),
+            )
+            .ok();
+            return;
+        }
+    };
+
+    // Spawn sidecar binary with FLASK_PORT and SGAF_DB_PATH env vars
     let sidecar_result = app
         .shell()
         .sidecar("sgaf-backend")
-        .map(|cmd| cmd.env("FLASK_PORT", port.to_string()))
+        .map(|cmd| {
+            cmd.env("FLASK_PORT", port.to_string())
+                .env("SGAF_DB_PATH", &db_path)
+        })
         .and_then(|cmd| cmd.spawn());
 
     match sidecar_result {

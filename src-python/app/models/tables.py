@@ -1,0 +1,93 @@
+"""SQLAlchemy Core table definitions for SGAF.
+
+All monetary columns are TEXT (never REAL) to prevent IEEE 754 rounding.
+All timestamp columns are TEXT in ISO 8601 UTC format.
+"""
+
+from sqlalchemy import Column, Integer, MetaData, Table, Text
+
+metadata = MetaData()
+
+schema_version = Table(
+    "schema_version",
+    metadata,
+    Column("version_id", Integer, primary_key=True, autoincrement=True),
+    Column("script_name", Text, nullable=False, unique=True),
+    Column("applied_at", Text, nullable=False),  # ISO 8601 UTC
+)
+
+app_config = Table(
+    "app_config",
+    metadata,
+    Column("config_id", Integer, primary_key=True),
+    Column("company_name", Text, nullable=False, server_default=""),
+    Column("company_nit", Text, nullable=False, server_default=""),
+    Column("password_hash", Text, nullable=False, server_default=""),
+    Column("jwt_secret", Text, nullable=False, server_default=""),
+    Column("export_folder", Text, nullable=False, server_default=""),
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+)
+
+fixed_assets = Table(
+    "fixed_assets",
+    metadata,
+    Column("asset_id", Integer, primary_key=True, autoincrement=True),
+    Column("code", Text, nullable=False, unique=True),
+    Column("description", Text, nullable=False),
+    Column("historical_cost", Text, nullable=False),  # Decimal string, 4 dec places
+    Column("salvage_value", Text, nullable=False),  # Decimal string, 4 dec places
+    Column("useful_life_months", Integer, nullable=False),
+    Column("acquisition_date", Text, nullable=False),  # ISO 8601 date
+    Column("category", Text, nullable=False),
+    Column(
+        "depreciation_method", Text, nullable=False
+    ),  # straight_line | sum_of_digits | declining_balance
+    Column(
+        "status", Text, nullable=False, server_default="active"
+    ),  # active | in_maintenance | retired
+    Column("retirement_date", Text),  # nullable
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+)
+
+depreciation_results = Table(
+    "depreciation_results",
+    metadata,
+    Column("result_id", Integer, primary_key=True, autoincrement=True),
+    Column("asset_id", Integer, nullable=False),  # FK to fixed_assets
+    Column("period_month", Integer, nullable=False),  # 1-12
+    Column("period_year", Integer, nullable=False),
+    Column("depreciation_amount", Text, nullable=False),  # Decimal string
+    Column("accumulated_depreciation", Text, nullable=False),  # Decimal string
+    Column("book_value", Text, nullable=False),  # Decimal string
+    Column("calculated_at", Text, nullable=False),  # ISO 8601 UTC
+)
+
+maintenance_events = Table(
+    "maintenance_events",
+    metadata,
+    Column("event_id", Integer, primary_key=True, autoincrement=True),
+    Column("asset_id", Integer, nullable=False),  # FK to fixed_assets
+    Column("description", Text, nullable=False),
+    Column("start_date", Text, nullable=False),  # ISO 8601 date
+    Column("end_date", Text),  # nullable — None means open
+    Column("status", Text, nullable=False, server_default="open"),  # open | closed
+    Column("cost", Text),  # nullable Decimal string
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+)
+
+audit_logs = Table(
+    "audit_logs",
+    metadata,
+    Column("log_id", Integer, primary_key=True, autoincrement=True),
+    Column("timestamp", Text, nullable=False),  # ISO 8601 UTC
+    Column("actor", Text, nullable=False),  # "system" in MVP
+    Column("entity_type", Text, nullable=False),  # asset | maintenance_event | config
+    Column("entity_id", Integer, nullable=False),
+    Column("action", Text, nullable=False),  # CREATE | UPDATE | RETIRE | DELETE
+    Column("field", Text),  # nullable for CREATE/RETIRE/DELETE
+    Column("old_value", Text),  # nullable for CREATE
+    Column("new_value", Text),  # nullable for DELETE
+)

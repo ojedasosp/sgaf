@@ -10,6 +10,6 @@
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "path:allow-app-data-dir"
+    "core:path:allow-resolve-directory"
   ]
 }
