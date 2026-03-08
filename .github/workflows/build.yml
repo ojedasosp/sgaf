@@ -24,7 +24,7 @@ jobs:
       - name: Run pytest
         run: |
           cd src-python
-          pytest --cov=app --cov-report=term-missing -v
+          pytest --cov=app --cov-report=term-missing --cov-fail-under=80 -v
 
   frontend-tests:
     name: Frontend Tests (Vitest)
@@ -98,11 +98,23 @@ jobs:
 
       - name: Copy sidecar binary (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: cp src-python/dist/sgaf-backend ${{ matrix.binary_dest }}
+        run: |
+          if [ ! -f src-python/dist/sgaf-backend ]; then
+            echo "ERROR: PyInstaller binary not found at src-python/dist/sgaf-backend"
+            exit 1
+          fi
+          mkdir -p $(dirname ${{ matrix.binary_dest }})
+          cp src-python/dist/sgaf-backend ${{ matrix.binary_dest }}
 
       - name: Copy sidecar binary (Windows)
         if: matrix.os == 'windows-latest'
-        run: cp src-python/dist/sgaf-backend.exe ${{ matrix.binary_dest }}
+        run: |
+          if (-not (Test-Path "src-python/dist/sgaf-backend.exe")) {
+            Write-Error "PyInstaller binary not found at src-python/dist/sgaf-backend.exe"
+            exit 1
+          }
+          mkdir -p $(split-path ${{ matrix.binary_dest }})
+          cp src-python/dist/sgaf-backend.exe ${{ matrix.binary_dest }}
 
       - name: Install frontend deps
         run: npm ci

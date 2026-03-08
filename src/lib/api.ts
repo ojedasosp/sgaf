@@ -49,5 +49,13 @@ export async function apiFetch<T>(
     throw new Error(errorMessage);
   }
 
+  // Validate response is JSON before parsing
+  const contentType = response.headers.get("content-type");
+  if (!contentType?.includes("application/json")) {
+    throw new Error(
+      `Expected JSON response, got ${contentType ?? "unknown content-type"}`
+    );
+  }
+
   return response.json() as Promise<T>;
 }

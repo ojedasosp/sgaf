@@ -30,5 +30,9 @@ if __name__ == "__main__":
     import os
 
     app = create_app()
-    port = int(os.environ.get("FLASK_PORT", 5000))
+    try:
+        port = int(os.environ.get("FLASK_PORT", "5000"))
+    except ValueError:
+        app.logger.warning("Invalid FLASK_PORT env var, falling back to 5000")
+        port = 5000
     app.run(host="127.0.0.1", port=port)

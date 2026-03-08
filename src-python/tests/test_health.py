@@ -45,3 +45,18 @@ def test_method_not_allowed_returns_json(client):
     data = response.get_json()
     assert data is not None
     assert "error" in data
+
+
+def test_app_factory_works_with_default_port():
+    """Verify app factory creates Flask app successfully."""
+    app = create_app()
+    assert app is not None
+    assert app.config["TESTING"] is False  # Default config
+
+
+def test_error_handlers_are_registered(client):
+    """Verify global error handlers are set up."""
+    app = create_app()
+    # Check that error handlers exist (won't crash when raising)
+    assert 404 in app.error_handler_spec.get(None, {})
+    assert 405 in app.error_handler_spec.get(None, {})

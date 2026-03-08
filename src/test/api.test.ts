@@ -168,5 +168,29 @@ describe("api.ts — Flask HTTP communication", () => {
       const result = await apiFetch("/create");
       expect(result).toEqual({ id: 1 });
     });
+
+    it("rejects response with non-JSON content-type on success status", async () => {
+      const mockResponse = new Response("<html>Server error</html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      });
+      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+
+      await expect(apiFetch("/endpoint")).rejects.toThrow(
+        "Expected JSON response, got text/html"
+      );
+    });
+
+    it("rejects response with missing content-type header", async () => {
+      const mockResponse = new Response(JSON.stringify({ data: "test" }), {
+        status: 200,
+        // No Content-Type header
+      });
+      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+
+      await expect(apiFetch("/endpoint")).rejects.toThrow(
+        "Expected JSON response"
+      );
+    });
   });
 });

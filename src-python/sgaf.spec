@@ -1,11 +1,19 @@
 # PyInstaller spec file for SGAF Flask sidecar binary
 # Build with: pyinstaller sgaf.spec
 
+import os
+import sys
+
 block_cipher = None
 
+# Ensure we're in the correct directory (src-python/)
+spec_dir = os.path.dirname(os.path.abspath(__file__))
+if not os.path.exists(os.path.join(spec_dir, "app", "__init__.py")):
+    raise FileNotFoundError(f"Flask app not found in {spec_dir}/app — ensure PyInstaller runs from src-python/")
+
 a = Analysis(
-    ["app/__init__.py"],
-    pathex=["."],
+    [os.path.join(spec_dir, "app", "__init__.py")],
+    pathex=[spec_dir],
     binaries=[],
     datas=[],
     hiddenimports=["flask", "bcrypt", "reportlab"],

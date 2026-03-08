@@ -11,7 +11,7 @@ src-python/*.spec
 
 # Rust / Tauri
 src-tauri/target/
-src-tauri/binaries/sgaf-backend*
+# Note: sgaf-backend binary is tracked in git (CI-generated but needed for local dev)
 
 # Environment
 .env

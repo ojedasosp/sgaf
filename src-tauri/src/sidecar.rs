@@ -12,13 +12,26 @@ const HEALTH_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_PORT: u16 = 5000;
 
 /// Finds the first available TCP port starting from `start`.
-pub fn find_available_port(start: u16) -> u16 {
+/// Returns error if no available port found within 1000 attempts.
+pub fn find_available_port(start: u16) -> Result<u16, String> {
     let mut port = start;
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u32 = 1000;
+
     loop {
         if TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            return port;
+            return Ok(port);
         }
-        port = port.checked_add(1).expect("No available port found in range");
+
+        attempts += 1;
+        if attempts > MAX_ATTEMPTS {
+            return Err("No available port found after 1000 attempts".to_string());
+        }
+
+        port = match port.checked_add(1) {
+            Some(p) => p,
+            None => return Err("Port number overflow — all ports exhausted".to_string()),
+        };
     }
 }
 
@@ -27,7 +40,13 @@ pub fn find_available_port(start: u16) -> u16 {
 ///
 /// Must be called from an async context — use `tauri::async_runtime::spawn`.
 pub async fn start_backend(app: AppHandle) {
-    let port = find_available_port(DEFAULT_PORT);
+    let port = match find_available_port(DEFAULT_PORT) {
+        Ok(p) => p,
+        Err(e) => {
+            app.emit("backend-error", &format!("Port management error: {}", e)).ok();
+            return;
+        }
+    };
     let health_url = format!("http://127.0.0.1:{}/api/v1/health", port);
 
     // Spawn sidecar binary with FLASK_PORT env var so Flask listens on the right port
