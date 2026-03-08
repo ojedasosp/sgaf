@@ -7,7 +7,7 @@ import sys
 block_cipher = None
 
 # Ensure we're in the correct directory (src-python/)
-spec_dir = os.path.dirname(os.path.abspath(__file__))
+spec_dir = SPECPATH
 if not os.path.exists(os.path.join(spec_dir, "app", "__init__.py")):
     raise FileNotFoundError(f"Flask app not found in {spec_dir}/app — ensure PyInstaller runs from src-python/")
 
