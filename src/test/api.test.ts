@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { setApiPort, getBaseUrl, apiFetch } from "../lib/api";
 
 // Mock global fetch
-global.fetch = vi.fn();
+globalThis.fetch = vi.fn();
 
 describe("api.ts — Flask HTTP communication", () => {
   beforeEach(() => {
@@ -37,11 +37,11 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await apiFetch("/health");
 
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(globalThis.fetch).toHaveBeenCalledWith(
         "http://127.0.0.1:5000/api/v1/health",
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -56,11 +56,11 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await apiFetch("/protected", { token: "jwt-token-123" });
 
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(globalThis.fetch).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -76,7 +76,7 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       const result = await apiFetch("/health");
 
@@ -92,7 +92,7 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await expect(apiFetch("/bad-endpoint")).rejects.toThrow(
         "Missing required field"
@@ -104,7 +104,7 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 500,
         headers: { "Content-Type": "text/plain" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await expect(apiFetch("/error")).rejects.toThrow("Request failed: 500");
     });
@@ -114,14 +114,14 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 201,
         headers: { "Content-Type": "application/json" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await apiFetch("/assets", {
         method: "POST",
         body: JSON.stringify({ name: "Asset 1" }),
       });
 
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(globalThis.fetch).toHaveBeenCalledWith(
         expect.stringContaining("/api/v1/assets"),
         expect.objectContaining({
           method: "POST",
@@ -135,13 +135,13 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await apiFetch("/endpoint", {
         headers: { "X-Custom": "value" },
       });
 
-      const callArgs = vi.mocked(global.fetch).mock.calls[0][1];
+      const callArgs = vi.mocked(globalThis.fetch).mock.calls[0][1];
       expect(callArgs?.headers).toEqual(
         expect.objectContaining({
           "Content-Type": "application/json",
@@ -151,7 +151,7 @@ describe("api.ts — Flask HTTP communication", () => {
     });
 
     it("handles network failure gracefully", async () => {
-      vi.mocked(global.fetch).mockRejectedValueOnce(
+      vi.mocked(globalThis.fetch).mockRejectedValueOnce(
         new Error("Network error")
       );
 
@@ -163,7 +163,7 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 201,
         headers: { "Content-Type": "application/json" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       const result = await apiFetch("/create");
       expect(result).toEqual({ id: 1 });
@@ -174,7 +174,7 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 200,
         headers: { "Content-Type": "text/html" },
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await expect(apiFetch("/endpoint")).rejects.toThrow(
         "Expected JSON response, got text/html"
@@ -186,7 +186,7 @@ describe("api.ts — Flask HTTP communication", () => {
         status: 200,
         // No Content-Type header
       });
-      vi.mocked(global.fetch).mockResolvedValueOnce(mockResponse);
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await expect(apiFetch("/endpoint")).rejects.toThrow(
         "Expected JSON response"

@@ -104,7 +104,7 @@ describe("queryClient.ts — TanStack Query configuration", () => {
       expect(cache).toBeDefined();
 
       // Observers can be added and removed without errors
-      const observer = cache.subscribe();
+      const observer = cache.subscribe(() => {});
       expect(observer).toBeDefined();
     });
   });

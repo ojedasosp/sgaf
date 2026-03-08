@@ -8,7 +8,7 @@ import App from "../App";
 
 // Mock Tauri events
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn((event: string, handler: (e: { payload: unknown }) => void) =>
+  listen: vi.fn((_event: string, _handler: (e: { payload: unknown }) => void) =>
     Promise.resolve(() => {})
   ),
 }));
