@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import React from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { queryClient } from "../lib/queryClient";
 import App from "../App";
 
@@ -11,6 +11,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn((_event: string, _handler: (e: { payload: unknown }) => void) =>
     Promise.resolve(() => {})
   ),
+}));
+
+// Mock Tauri core (used by SetupWizard for convertFileSrc)
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: vi.fn((path: string) => `asset://${path}`),
+  invoke: vi.fn(),
 }));
 
 // Mock api module
@@ -26,13 +32,13 @@ describe("main.tsx — React entry point with providers", () => {
   });
 
   describe("Provider structure", () => {
-    it("renders with QueryClientProvider and BrowserRouter", () => {
+    it("renders with QueryClientProvider and MemoryRouter", () => {
       const { container } = render(
         <React.StrictMode>
           <QueryClientProvider client={queryClient}>
-            <BrowserRouter>
+            <MemoryRouter>
               <App />
-            </BrowserRouter>
+            </MemoryRouter>
           </QueryClientProvider>
         </React.StrictMode>
       );
@@ -41,25 +47,25 @@ describe("main.tsx — React entry point with providers", () => {
       expect(container).toBeDefined();
     });
 
-    it("BrowserRouter enables React Router", () => {
+    it("MemoryRouter enables React Router", () => {
       const { container } = render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
 
-      // BrowserRouter should have initialized location hook
+      // MemoryRouter should have initialized location hook
       expect(container).toBeDefined();
     });
 
     it("QueryClientProvider makes queryClient available to hooks", () => {
       const { container } = render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
 
@@ -73,9 +79,9 @@ describe("main.tsx — React entry point with providers", () => {
       const { container } = render(
         <React.StrictMode>
           <QueryClientProvider client={queryClient}>
-            <BrowserRouter>
+            <MemoryRouter>
               <App />
-            </BrowserRouter>
+            </MemoryRouter>
           </QueryClientProvider>
         </React.StrictMode>
       );
@@ -88,9 +94,9 @@ describe("main.tsx — React entry point with providers", () => {
     it("App renders inside provider hierarchy", async () => {
       render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
 
@@ -104,9 +110,9 @@ describe("main.tsx — React entry point with providers", () => {
     it("renders App when all providers are present", () => {
       const { container } = render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
 
@@ -114,16 +120,16 @@ describe("main.tsx — React entry point with providers", () => {
       expect(container).toBeInTheDocument();
     });
 
-    it("window location is accessible inside BrowserRouter", () => {
+    it("window location is accessible inside MemoryRouter", () => {
       const { container } = render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
 
-      // BrowserRouter initializes history/location
+      // MemoryRouter initializes history/location
       expect(window.location).toBeDefined();
       expect(container).toBeDefined();
     });
@@ -133,9 +139,9 @@ describe("main.tsx — React entry point with providers", () => {
     it("queryClient is properly configured for React Query", () => {
       render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
 
@@ -147,9 +153,9 @@ describe("main.tsx — React entry point with providers", () => {
     it("App can be rendered multiple times with fresh providers", () => {
       const { unmount: unmount1 } = render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
       unmount1();
@@ -157,9 +163,9 @@ describe("main.tsx — React entry point with providers", () => {
       // Render again - should not cause errors
       const { container } = render(
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <MemoryRouter>
             <App />
-          </BrowserRouter>
+          </MemoryRouter>
         </QueryClientProvider>
       );
 
@@ -175,9 +181,9 @@ describe("main.tsx — React entry point with providers", () => {
       expect(() => {
         render(
           <QueryClientProvider client={queryClient}>
-            <BrowserRouter>
+            <MemoryRouter>
               <App />
-            </BrowserRouter>
+            </MemoryRouter>
           </QueryClientProvider>
         );
       }).not.toThrow();

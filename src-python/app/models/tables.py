@@ -25,6 +25,7 @@ app_config = Table(
     Column("password_hash", Text, nullable=False, server_default=""),
     Column("jwt_secret", Text, nullable=False, server_default=""),
     Column("export_folder", Text, nullable=False, server_default=""),
+    Column("logo_path", Text),  # nullable — set during first-launch wizard (Story 1.3)
     Column("created_at", Text, nullable=False),
     Column("updated_at", Text, nullable=False),
 )

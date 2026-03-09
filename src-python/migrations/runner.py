@@ -10,7 +10,11 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-MIGRATIONS_DIR = Path(__file__).parent
+import sys
+
+# PyInstaller extracts data files to sys._MEIPASS; in dev, use the file's directory
+_BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
+MIGRATIONS_DIR = _BASE / "migrations"
 
 
 def run_migrations(engine: Engine) -> None:

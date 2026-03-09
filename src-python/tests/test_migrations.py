@@ -27,7 +27,7 @@ def test_first_run_creates_all_tables():
     assert expected.issubset(table_names), f"Missing tables: {expected - table_names}"
 
 
-def test_first_run_records_both_scripts():
+def test_first_run_records_all_scripts():
     engine = make_engine()
     run_migrations(engine)
 
@@ -39,6 +39,7 @@ def test_first_run_records_both_scripts():
     script_names = [r[0] for r in rows]
     assert "001_initial_schema.sql" in script_names
     assert "002_seed_config.sql" in script_names
+    assert "003_add_logo.sql" in script_names
 
 
 def test_idempotent_rerun_does_not_duplicate():
@@ -49,7 +50,8 @@ def test_idempotent_rerun_does_not_duplicate():
     with engine.connect() as conn:
         count = conn.execute(text("SELECT COUNT(*) FROM schema_version")).scalar()
 
-    assert count == 2, f"Expected 2 rows in schema_version, got {count}"
+    # 3 migration scripts: 001, 002, 003
+    assert count == 3, f"Expected 3 rows in schema_version, got {count}"
 
 
 def test_seed_config_inserts_single_row():

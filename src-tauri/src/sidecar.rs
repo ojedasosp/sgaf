@@ -3,10 +3,14 @@
 /// and emits backend-ready or backend-error events to the frontend.
 use std::fs;
 use std::net::TcpListener;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+
+/// Holds the sidecar child process so it can be killed on app exit.
+pub struct SidecarChild(pub Mutex<Option<CommandChild>>);
 
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
 const HEALTH_TIMEOUT_SECS: u64 = 30;
@@ -81,16 +85,20 @@ pub async fn start_backend(app: AppHandle) {
         })
         .and_then(|cmd| cmd.spawn());
 
-    match sidecar_result {
+    let _rx = match sidecar_result {
         Err(e) => {
             let msg = format!("Failed to spawn backend: {}", e);
             app.emit("backend-error", &msg).ok();
             return;
         }
-        Ok((_rx, _child)) => {
-            // child is held alive; _rx receives stdout/stderr lines
+        Ok((rx, child)) => {
+            // Store child in app state so it can be killed on exit
+            if let Some(state) = app.try_state::<SidecarChild>() {
+                *state.0.lock().unwrap() = Some(child);
+            }
+            rx
         }
-    }
+    };
 
     // Poll health endpoint until backend responds or timeout
     let deadline = Instant::now() + Duration::from_secs(HEALTH_TIMEOUT_SECS);

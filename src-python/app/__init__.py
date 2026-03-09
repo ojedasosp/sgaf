@@ -1,8 +1,10 @@
 from flask import Flask, jsonify
+from flask_cors import CORS
 
 
 def create_app():
     app = Flask(__name__)
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
 
     # Initialize database and run migrations
     from app.database import get_engine
@@ -17,8 +19,10 @@ def create_app():
 
     # Register blueprints
     from app.routes.health import health_bp
+    from app.routes.config import config_bp
 
     app.register_blueprint(health_bp)
+    app.register_blueprint(config_bp)
 
     # Global JSON error handler — never return HTML from Flask
     @app.errorhandler(Exception)
