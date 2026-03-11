@@ -4,6 +4,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient } from "@tanstack/react-query";
 import App from "../App";
+import Dashboard from "../screens/Dashboard";
+import { useAppStore } from "../store/appStore";
 
 // Mock Tauri event listener — simulates backend-ready and backend-error events
 const mockListeners: Record<string, ((event: { payload: unknown }) => void)[]> = {};
@@ -77,10 +79,11 @@ describe("App — backend lifecycle gating", () => {
       emit("backend-ready", 5000);
     });
 
-    // Should navigate to /login (Login placeholder)
+    // Should navigate to /login (Login screen with password form)
     expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
     expect(screen.getByText("SGAF")).toBeInTheDocument();
-    expect(screen.getByText(/story 1.4/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/contraseña/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ingresar/i })).toBeInTheDocument();
   });
 
   it("navigates to wizard when setup is incomplete after backend-ready", async () => {
@@ -125,5 +128,48 @@ describe("App — backend lifecycle gating", () => {
     expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
     expect(screen.getByText(/error al iniciar sgaf/i)).toBeInTheDocument();
     expect(screen.getByText(/backend failed to start/i)).toBeInTheDocument();
+  });
+});
+
+describe("App — PrivateRoute and Dashboard routing", () => {
+  beforeEach(() => {
+    Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockReset();
+    useAppStore.getState().clearToken();
+  });
+
+  it("redirects /dashboard to /login when no token is present", async () => {
+    const testQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={testQueryClient}>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    // App starts in loading state; trigger backend-ready so routing resolves
+    mockFetchResponse({ data: { setup_complete: true } });
+    await act(async () => {
+      emit("backend-ready", 5000);
+    });
+
+    // No token → redirected to /login
+    expect(screen.getByLabelText(/contraseña/i)).toBeInTheDocument();
+    expect(screen.queryByText(/dashboard/i)).not.toBeInTheDocument();
+  });
+
+  it("Dashboard component renders its placeholder content", () => {
+    // The full token → /dashboard navigation flow is covered by Login.test.tsx.
+    // This test verifies the Dashboard component itself renders correctly.
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+    expect(screen.getByText("SGAF")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /nuevo activo/i })).toBeInTheDocument();
   });
 });

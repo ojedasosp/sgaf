@@ -1,6 +1,20 @@
 /// HTTP client for Flask API communication.
 /// Port is set dynamically at startup when backend-ready event fires.
 
+export class ApiError extends Error {
+  status: number;
+  field?: string;
+  errorCode?: string;
+
+  constructor(message: string, status: number, field?: string, errorCode?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.field = field;
+    this.errorCode = errorCode;
+  }
+}
+
 let apiPort: number = parseInt(import.meta.env.VITE_API_PORT ?? "5000", 10);
 
 export function setApiPort(port: number): void {
@@ -38,15 +52,25 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
+    // Global 401 handler: clear stale token so PrivateRoute redirects to /login
+    if (response.status === 401 && token) {
+      const { useAppStore } = await import("../store/appStore");
+      useAppStore.getState().clearToken();
+    }
+
     let errorMessage = `Request failed: ${response.status}`;
+    let field: string | undefined;
+    let errorCode: string | undefined;
     try {
       const error = await response.json();
       errorMessage = error.message ?? error.error ?? errorMessage;
+      field = error.field;
+      errorCode = error.error;
     } catch {
       // Response is not JSON (e.g., 500 HTML error page)
       // Keep the generic HTTP error message
     }
-    throw new Error(errorMessage);
+    throw new ApiError(errorMessage, response.status, field, errorCode);
   }
 
   // Validate response is JSON before parsing

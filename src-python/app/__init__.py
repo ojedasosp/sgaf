@@ -18,11 +18,15 @@ def create_app():
         raise  # Propagate so Tauri detects the crash and shows error screen
 
     # Register blueprints
-    from app.routes.health import health_bp
+    from app.routes.assets import assets_bp
+    from app.routes.auth import auth_bp
     from app.routes.config import config_bp
+    from app.routes.health import health_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(config_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(assets_bp)
 
     # Global JSON error handler — never return HTML from Flask
     @app.errorhandler(Exception)

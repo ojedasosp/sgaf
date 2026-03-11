@@ -40,7 +40,7 @@ export default function SetupWizard() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [setupComplete, setSetupComplete] = useState(false);
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => {

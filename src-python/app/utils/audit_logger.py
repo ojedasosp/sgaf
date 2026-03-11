@@ -42,7 +42,7 @@ class AuditLogger:
         Args:
             entity_type: "asset" | "maintenance_event" | "config"
             entity_id: Primary key of the affected entity.
-            action: "CREATE" | "UPDATE" | "RETIRE" | "DELETE"
+            action: "CREATE" | "UPDATE" | "RETIRE" | "DELETE" | "LOGIN"
             field: Column name changed (None for CREATE/RETIRE/DELETE).
             old_value: Previous value as string (None for CREATE).
             new_value: New value as string (None for DELETE).

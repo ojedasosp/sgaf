@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { setApiPort, getBaseUrl, apiFetch } from "../lib/api";
+import { setApiPort, getBaseUrl, apiFetch, ApiError } from "../lib/api";
+import { useAppStore } from "../store/appStore";
 
 // Mock global fetch
 globalThis.fetch = vi.fn();
@@ -83,10 +84,11 @@ describe("api.ts — Flask HTTP communication", () => {
       expect(result).toEqual(responseData);
     });
 
-    it("throws error on non-ok status with JSON error body", async () => {
+    it("throws ApiError on non-ok status with JSON error body", async () => {
       const errorBody = {
         error: "INVALID_REQUEST",
         message: "Missing required field",
+        field: "code",
       };
       const mockResponse = new Response(JSON.stringify(errorBody), {
         status: 400,
@@ -94,9 +96,17 @@ describe("api.ts — Flask HTTP communication", () => {
       });
       vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
-      await expect(apiFetch("/bad-endpoint")).rejects.toThrow(
-        "Missing required field"
-      );
+      try {
+        await apiFetch("/bad-endpoint");
+        expect.fail("Should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        const apiErr = err as ApiError;
+        expect(apiErr.message).toBe("Missing required field");
+        expect(apiErr.status).toBe(400);
+        expect(apiErr.field).toBe("code");
+        expect(apiErr.errorCode).toBe("INVALID_REQUEST");
+      }
     });
 
     it("handles error response when JSON parsing fails", async () => {
@@ -191,6 +201,35 @@ describe("api.ts — Flask HTTP communication", () => {
       await expect(apiFetch("/endpoint")).rejects.toThrow(
         "Expected JSON response"
       );
+    });
+
+    it("clears Zustand token on 401 when token was provided", async () => {
+      useAppStore.getState().setToken("stale-jwt");
+      const mockResponse = new Response(
+        JSON.stringify({ error: "UNAUTHORIZED", message: "Invalid or missing token" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
+
+      await expect(apiFetch("/protected", { token: "stale-jwt" })).rejects.toThrow(
+        "Invalid or missing token"
+      );
+      expect(useAppStore.getState().token).toBeNull();
+    });
+
+    it("does not clear token on 401 when no token was sent (e.g. login)", async () => {
+      useAppStore.getState().setToken("existing-jwt");
+      const mockResponse = new Response(
+        JSON.stringify({ error: "UNAUTHORIZED", message: "Invalid credentials" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
+
+      await expect(apiFetch("/auth/login", { method: "POST" })).rejects.toThrow(
+        "Invalid credentials"
+      );
+      // Token should remain — this was a login attempt, not a session rejection
+      expect(useAppStore.getState().token).toBe("existing-jwt");
     });
   });
 });

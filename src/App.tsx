@@ -1,18 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import ErrorMessage from "./components/shared/ErrorMessage";
 import LoadingSpinner from "./components/shared/LoadingSpinner";
 import { apiFetch, setApiPort } from "./lib/api";
+import { useAppStore } from "./store/appStore";
+import AssetDetail from "./features/assets/AssetDetail";
+import AssetForm from "./features/assets/AssetForm";
+import AssetList from "./features/assets/AssetList";
+import Dashboard from "./screens/Dashboard";
 import Login from "./screens/Login";
 import SetupWizard from "./screens/SetupWizard";
 
 type BackendStatus = "loading" | "ready" | "error";
 
+/** Redirects to /login if no JWT token is present in the Zustand store. */
+function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const token = useAppStore((s) => s.token);
+  return token ? <>{children}</> : <Navigate to="/login" replace />;
+}
+
 function App() {
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const navigate = useNavigate();
+  const initialRouteResolved = useRef(false);
 
   useEffect(() => {
     // Listen for backend lifecycle events emitted by sidecar.rs (AC2, AC3)
@@ -33,8 +45,11 @@ function App() {
   }, []);
 
   // Once backend is ready, check if first-launch setup has been completed (AC1, AC6)
+  // Runs only once — subsequent route changes must not re-trigger this.
   useEffect(() => {
     if (backendStatus !== "ready") return;
+    if (initialRouteResolved.current) return;
+    initialRouteResolved.current = true;
     apiFetch<{ data: { setup_complete: boolean } }>("/config/setup-status")
       .then(({ data }) => {
         navigate(data.setup_complete ? "/login" : "/wizard", { replace: true });
@@ -62,6 +77,38 @@ function App() {
     <Routes>
       <Route path="/wizard" element={<SetupWizard />} />
       <Route path="/login" element={<Login />} />
+      <Route
+        path="/dashboard"
+        element={
+          <PrivateRoute>
+            <Dashboard />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/assets"
+        element={
+          <PrivateRoute>
+            <AssetList />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/assets/new"
+        element={
+          <PrivateRoute>
+            <AssetForm />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/assets/:id"
+        element={
+          <PrivateRoute>
+            <AssetDetail />
+          </PrivateRoute>
+        }
+      />
       <Route path="/*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
