@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import ErrorMessage from "./components/shared/ErrorMessage";
 import LoadingSpinner from "./components/shared/LoadingSpinner";
 import { apiFetch, setApiPort } from "./lib/api";
@@ -38,6 +39,23 @@ function App() {
       setBackendStatus("error");
       setErrorMessage(event.payload);
     });
+
+    // Poll backend status in case the event fired before this listener registered.
+    // This handles the race condition where the sidecar starts faster than React mounts.
+    invoke<{ Loading?: null; Ready?: number; Error?: string }>("get_backend_status")
+      .then((state) => {
+        if ("Ready" in state && state.Ready != null) {
+          setApiPort(state.Ready);
+          setBackendStatus("ready");
+        } else if ("Error" in state && state.Error != null) {
+          setBackendStatus("error");
+          setErrorMessage(state.Error);
+        }
+        // If Loading, do nothing — wait for the event
+      })
+      .catch(() => {
+        // Command not available (e.g., running outside Tauri) — ignore
+      });
 
     return () => {
       unlistenReady.then((f) => f());

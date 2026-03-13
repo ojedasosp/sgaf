@@ -232,6 +232,51 @@ def calculate_depreciation():
     )
 
 
+@depreciation_bp.get("/assets/<int:asset_id>")
+@require_auth
+def get_asset_depreciation_history(asset_id: int):
+    """GET /api/v1/depreciation/assets/<asset_id> — All depreciation results for one asset.
+
+    Returns all calculated periods for the given asset, ordered by period_year, period_month ASC.
+    Returns 404 if the asset does not exist.
+    Returns 200 with empty data if asset exists but has no depreciation history.
+    """
+    with get_db() as conn:
+        asset_row = conn.execute(
+            select(fixed_assets).where(fixed_assets.c.asset_id == asset_id)
+        ).fetchone()
+        if asset_row is None:
+            return jsonify({"error": "NOT_FOUND", "message": "Asset not found"}), 404
+
+        rows = conn.execute(
+            select(depreciation_results)
+            .where(depreciation_results.c.asset_id == asset_id)
+            .order_by(
+                depreciation_results.c.period_year.asc(),
+                depreciation_results.c.period_month.asc(),
+            )
+        ).fetchall()
+
+    result_list = []
+    for row in rows:
+        row_dict = dict(row._mapping)
+        result_list.append(
+            {
+                "result_id": row_dict["result_id"],
+                "asset_id": row_dict["asset_id"],
+                "period_month": row_dict["period_month"],
+                "period_year": row_dict["period_year"],
+                "depreciation_amount": row_dict["depreciation_amount"],
+                "accumulated_depreciation": row_dict["accumulated_depreciation"],
+                "book_value": row_dict["book_value"],
+                "calculated_at": row_dict["calculated_at"],
+                "opening_book_value": _compute_opening_book_value(row_dict),
+            }
+        )
+
+    return jsonify({"data": result_list, "total": len(result_list), "asset_id": asset_id}), 200
+
+
 @depreciation_bp.get("/")
 @require_auth
 def get_depreciation_results():

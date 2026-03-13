@@ -26,3 +26,21 @@ export interface DepreciationResponse {
   calculated_at?: string; // present when total > 0
   message?: string; // present when no active assets
 }
+
+export interface AssetDepreciationRow {
+  result_id: number;
+  asset_id: number;
+  period_month: number;
+  period_year: number;
+  opening_book_value: string; // Decimal string, 4 decimal places — computed, not stored
+  depreciation_amount: string; // Decimal string, 4 decimal places
+  accumulated_depreciation: string; // Decimal string, 4 decimal places
+  book_value: string; // Decimal string, 4 decimal places
+  calculated_at: string; // ISO 8601 UTC
+}
+
+export interface AssetDepreciationHistoryResponse {
+  data: AssetDepreciationRow[];
+  total: number;
+  asset_id: number;
+}

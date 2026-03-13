@@ -228,11 +228,9 @@ class TestCalculateReplace:
 
         resp1 = test_client.post("/api/v1/depreciation/", json=payload, headers=headers)
         assert resp1.status_code == 200
-        calculated_at_1 = resp1.get_json()["calculated_at"]
 
         resp2 = test_client.post("/api/v1/depreciation/", json=payload, headers=headers)
         assert resp2.status_code == 200
-        calculated_at_2 = resp2.get_json()["calculated_at"]
 
         # Second GET should return only 1 row (no duplicates)
         resp_get = test_client.get(
@@ -428,9 +426,7 @@ _FOUR_DECIMAL_RE = re.compile(r"^\d+\.\d{4}$")
 
 
 class TestDecimalPrecision:
-    def test_all_monetary_fields_have_4_decimal_places(
-        self, test_client, auth_token, test_engine
-    ):
+    def test_all_monetary_fields_have_4_decimal_places(self, test_client, auth_token, test_engine):
         with test_engine.connect() as conn:
             _insert_asset(
                 conn,
@@ -455,9 +451,9 @@ class TestDecimalPrecision:
                 "book_value",
             ):
                 value = row[field]
-                assert _FOUR_DECIMAL_RE.match(value), (
-                    f"Field '{field}' = '{value}' does not match 4-decimal pattern"
-                )
+                assert _FOUR_DECIMAL_RE.match(
+                    value
+                ), f"Field '{field}' = '{value}' does not match 4-decimal pattern"
 
 
 # ---------------------------------------------------------------------------
@@ -466,9 +462,7 @@ class TestDecimalPrecision:
 
 
 class TestPerformance:
-    def test_calculation_under_5_seconds_for_50_assets(
-        self, test_client, auth_token, test_engine
-    ):
+    def test_calculation_under_5_seconds_for_50_assets(self, test_client, auth_token, test_engine):
         """AC3 (NFR2): Calculate depreciation for 50 active assets in < 5 seconds."""
         with test_engine.connect() as conn:
             for i in range(50):
@@ -495,9 +489,7 @@ class TestPerformance:
         assert resp.get_json()["total"] == 50
         assert elapsed < 5.0, f"Calculation took {elapsed:.2f}s, expected < 5.0s"
 
-    def test_get_results_under_5_seconds_for_50_assets(
-        self, test_client, auth_token, test_engine
-    ):
+    def test_get_results_under_5_seconds_for_50_assets(self, test_client, auth_token, test_engine):
         """AC3: GET results for 50 assets in < 5 seconds (test JOIN optimization)."""
         with test_engine.connect() as conn:
             for i in range(50):
@@ -530,3 +522,182 @@ class TestPerformance:
         assert resp.status_code == 200
         assert resp.get_json()["total"] == 50
         assert elapsed < 5.0, f"GET took {elapsed:.2f}s, expected < 5.0s"
+
+
+# ---------------------------------------------------------------------------
+# TestGetAssetHistory (AC2, AC3, Story 3.3)
+# ---------------------------------------------------------------------------
+
+
+class TestGetAssetHistory:
+    def test_returns_200_with_history(self, test_client, auth_token, test_engine):
+        """GET /assets/<id> returns 200 with depreciation rows after a POST calculation."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="HST-001", acquisition_date="2024-01-01")
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},
+            headers=headers,
+        )
+        resp = test_client.get(
+            f"/api/v1/depreciation/assets/{asset_id}",
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["total"] == 1
+        assert body["asset_id"] == asset_id
+        assert len(body["data"]) == 1
+
+    def test_row_contains_required_fields(self, test_client, auth_token, test_engine):
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="HST-002", acquisition_date="2024-01-01")
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},
+            headers=headers,
+        )
+        resp = test_client.get(
+            f"/api/v1/depreciation/assets/{asset_id}",
+            headers=headers,
+        )
+        row = resp.get_json()["data"][0]
+        for field in (
+            "result_id",
+            "asset_id",
+            "period_month",
+            "period_year",
+            "opening_book_value",
+            "depreciation_amount",
+            "accumulated_depreciation",
+            "book_value",
+            "calculated_at",
+        ):
+            assert field in row, f"Missing field: {field}"
+
+    def test_matches_post_monetary_values(self, test_client, auth_token, test_engine):
+        """Values from GET /assets/<id> must match the POST calculation output."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(
+                conn,
+                code="HST-003",
+                historical_cost="12000.0000",
+                salvage_value="0.0000",
+                useful_life_months=60,
+                depreciation_method="straight_line",
+                acquisition_date="2024-01-01",
+            )
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        post_resp = test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},
+            headers=headers,
+        )
+        post_row = post_resp.get_json()["data"][0]
+
+        get_resp = test_client.get(
+            f"/api/v1/depreciation/assets/{asset_id}",
+            headers=headers,
+        )
+        get_row = get_resp.get_json()["data"][0]
+
+        assert get_row["depreciation_amount"] == post_row["depreciation_amount"]
+        assert get_row["accumulated_depreciation"] == post_row["accumulated_depreciation"]
+        assert get_row["book_value"] == post_row["book_value"]
+        assert get_row["opening_book_value"] == post_row["opening_book_value"]
+
+
+class TestGetAssetHistoryMultiplePeriods:
+    def test_multiple_periods_ordered_chronologically(self, test_client, auth_token, test_engine):
+        """POST for 2 periods; asset history returns both, oldest first."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="MUL-001", acquisition_date="2024-01-01")
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 2, "period_year": 2025},
+            headers=headers,
+        )
+        test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},
+            headers=headers,
+        )
+
+        resp = test_client.get(
+            f"/api/v1/depreciation/assets/{asset_id}",
+            headers=headers,
+        )
+        body = resp.get_json()
+        assert body["total"] == 2
+        rows = body["data"]
+        # Chronological order: Feb before March
+        assert rows[0]["period_month"] == 2
+        assert rows[1]["period_month"] == 3
+
+
+class TestGetAssetHistoryEmpty:
+    def test_returns_200_with_empty_data_for_asset_without_history(
+        self, test_client, auth_token, test_engine
+    ):
+        """Asset exists but has no depreciation — returns 200 with empty data."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="EMP-001", acquisition_date="2024-01-01")
+
+        resp = test_client.get(
+            f"/api/v1/depreciation/assets/{asset_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"] == []
+        assert body["total"] == 0
+        assert body["asset_id"] == asset_id
+
+
+class TestGetAssetHistoryNotFound:
+    def test_returns_404_for_nonexistent_asset(self, test_client, auth_token):
+        """Non-existent asset_id → 404 NOT_FOUND."""
+        resp = test_client.get(
+            "/api/v1/depreciation/assets/99999",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 404
+        body = resp.get_json()
+        assert body["error"] == "NOT_FOUND"
+
+
+class TestGetAssetHistoryAuth:
+    def test_requires_authentication(self, test_client, test_engine):
+        """GET /assets/<id> without token → 401."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="AUTH-001", acquisition_date="2024-01-01")
+
+        resp = test_client.get(f"/api/v1/depreciation/assets/{asset_id}")
+        assert resp.status_code == 401
+
+
+class TestGetAssetHistoryImmutability:
+    def test_replace_semantics_preserved_in_asset_history(
+        self, test_client, auth_token, test_engine
+    ):
+        """POST same period twice (replace); asset history shows only 1 row for that period."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="IMM-001", acquisition_date="2024-01-01")
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        payload = {"period_month": 5, "period_year": 2025}
+        test_client.post("/api/v1/depreciation/", json=payload, headers=headers)
+        test_client.post("/api/v1/depreciation/", json=payload, headers=headers)
+
+        resp = test_client.get(
+            f"/api/v1/depreciation/assets/{asset_id}",
+            headers=headers,
+        )
+        assert resp.get_json()["total"] == 1

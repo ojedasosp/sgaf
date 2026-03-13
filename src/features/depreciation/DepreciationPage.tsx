@@ -226,8 +226,12 @@ export default function DepreciationPage() {
             </p>
             <DepreciationTable rows={displayResults.data} />
           </div>
-        ) : displayResults && displayResults.total === 0 && displayResults.message ? (
-          <p className="text-sm text-muted-foreground">{displayResults.message}</p>
+        ) : existingResults && existingResults.total === 0 && existingResults.message ? (
+          <p className="text-sm text-muted-foreground">{existingResults.message}</p>
+        ) : existingResults && existingResults.total === 0 && !existingResults.message ? (
+          <p className="text-sm text-muted-foreground">
+            Calcular depreciación para este período.
+          </p>
         ) : null}
       </div>
     </div>

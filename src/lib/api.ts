@@ -118,3 +118,15 @@ export async function getDepreciationResults(
     { token }
   );
 }
+
+/// Retrieve all depreciation results for a specific asset across all calculated periods.
+/// GET /api/v1/depreciation/assets/{assetId}
+export async function getAssetDepreciationHistory(
+  assetId: number,
+  token: string
+): Promise<import("../types/depreciation").AssetDepreciationHistoryResponse> {
+  return apiFetch<import("../types/depreciation").AssetDepreciationHistoryResponse>(
+    `/depreciation/assets/${assetId}`,
+    { token }
+  );
+}

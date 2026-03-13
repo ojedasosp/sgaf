@@ -16,7 +16,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 // Mock Tauri core (used by SetupWizard for convertFileSrc)
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: vi.fn((path: string) => `asset://${path}`),
-  invoke: vi.fn(),
+  invoke: vi.fn(() => Promise.resolve({ Loading: null })),
 }));
 
 // Mock api module

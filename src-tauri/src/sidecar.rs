@@ -12,6 +12,16 @@ use tauri_plugin_shell::ShellExt;
 /// Holds the sidecar child process so it can be killed on app exit.
 pub struct SidecarChild(pub Mutex<Option<CommandChild>>);
 
+/// Holds the backend status so the frontend can poll it if it missed the event.
+#[derive(Clone, serde::Serialize)]
+pub enum BackendState {
+    Loading,
+    Ready(u16),
+    Error(String),
+}
+
+pub struct BackendStatus(pub Mutex<BackendState>);
+
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
 const HEALTH_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_PORT: u16 = 5000;
@@ -48,7 +58,11 @@ pub async fn start_backend(app: AppHandle) {
     let port = match find_available_port(DEFAULT_PORT) {
         Ok(p) => p,
         Err(e) => {
-            app.emit("backend-error", &format!("Port management error: {}", e)).ok();
+            let msg = format!("Port management error: {}", e);
+            if let Some(state) = app.try_state::<BackendStatus>() {
+                *state.0.lock().unwrap() = BackendState::Error(msg.clone());
+            }
+            app.emit("backend-error", &msg).ok();
             return;
         }
     };
@@ -59,18 +73,21 @@ pub async fn start_backend(app: AppHandle) {
         Ok(app_data) => {
             let sgaf_dir = app_data.join("sgaf");
             if let Err(e) = fs::create_dir_all(&sgaf_dir) {
-                app.emit("backend-error", &format!("Cannot create app data directory: {}", e))
-                    .ok();
+                let msg = format!("Cannot create app data directory: {}", e);
+                if let Some(state) = app.try_state::<BackendStatus>() {
+                    *state.0.lock().unwrap() = BackendState::Error(msg.clone());
+                }
+                app.emit("backend-error", &msg).ok();
                 return;
             }
             sgaf_dir.join("sgaf.db").to_string_lossy().to_string()
         }
         Err(e) => {
-            app.emit(
-                "backend-error",
-                &format!("Cannot resolve app data directory: {}", e),
-            )
-            .ok();
+            let msg = format!("Cannot resolve app data directory: {}", e);
+            if let Some(state) = app.try_state::<BackendStatus>() {
+                *state.0.lock().unwrap() = BackendState::Error(msg.clone());
+            }
+            app.emit("backend-error", &msg).ok();
             return;
         }
     };
@@ -88,6 +105,9 @@ pub async fn start_backend(app: AppHandle) {
     let _rx = match sidecar_result {
         Err(e) => {
             let msg = format!("Failed to spawn backend: {}", e);
+            if let Some(state) = app.try_state::<BackendStatus>() {
+                *state.0.lock().unwrap() = BackendState::Error(msg.clone());
+            }
             app.emit("backend-error", &msg).ok();
             return;
         }
@@ -106,11 +126,11 @@ pub async fn start_backend(app: AppHandle) {
 
     loop {
         if Instant::now() > deadline {
-            app.emit(
-                "backend-error",
-                format!("Backend failed to start within {} seconds", HEALTH_TIMEOUT_SECS),
-            )
-            .ok();
+            let msg = format!("Backend failed to start within {} seconds", HEALTH_TIMEOUT_SECS);
+            if let Some(state) = app.try_state::<BackendStatus>() {
+                *state.0.lock().unwrap() = BackendState::Error(msg.clone());
+            }
+            app.emit("backend-error", &msg).ok();
             return;
         }
 
@@ -126,6 +146,9 @@ pub async fn start_backend(app: AppHandle) {
                 if let Some(window) = app.get_webview_window("main") {
                     window.show().ok();
                     window.set_focus().ok();
+                }
+                if let Some(state) = app.try_state::<BackendStatus>() {
+                    *state.0.lock().unwrap() = BackendState::Ready(port);
                 }
                 app.emit("backend-ready", port).ok();
                 return;

@@ -20,6 +20,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { useGetAssetAuditLog } from "../../hooks/useAuditLog";
 import { useDeleteAsset, useGetAsset, useRetireAsset, useUpdateAsset } from "../../hooks/useAssets";
+import AssetDepreciationSchedule from "../depreciation/AssetDepreciationSchedule";
 import type {
   AuditLogEntry,
   Asset,
@@ -290,6 +291,9 @@ export default function AssetDetail() {
   const [editTouched, setEditTouched] = useState<
     Partial<Record<keyof EditFormValues, boolean>>
   >({});
+
+  // Depreciation schedule section state
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
   // Retire mode state
   const [isRetiring, setIsRetiring] = useState(false);
@@ -773,6 +777,21 @@ export default function AssetDetail() {
                 </table>
               </div>
             )}
+          </div>
+
+          {/* Depreciation schedule — collapsed by default, lazy-loaded on expand */}
+          <div className="mt-6 rounded-lg border border-border bg-[#f2e5bc]">
+            <div className="border-b border-[#d5c4a1] px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setIsScheduleOpen((prev) => !prev)}
+                className="flex w-full items-center justify-between text-base font-semibold text-[#3c3836] hover:text-[#504945]"
+              >
+                Tabla de Depreciación
+                <span className="text-sm text-[#665c54]">{isScheduleOpen ? "▲" : "▼"}</span>
+              </button>
+            </div>
+            {isScheduleOpen && <AssetDepreciationSchedule assetId={assetId} />}
           </div>
         </div>
       </div>

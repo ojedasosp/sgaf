@@ -4,7 +4,7 @@ pub mod sidecar;
 use std::sync::Mutex;
 use tauri::Manager;
 
-use crate::sidecar::SidecarChild;
+use crate::sidecar::{BackendState, BackendStatus, SidecarChild};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,6 +12,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(SidecarChild(Mutex::new(None)))
+        .manage(BackendStatus(Mutex::new(BackendState::Loading)))
         .setup(|app| {
             // Hide the main window until Flask sidecar is ready (NFR15)
             if let Some(window) = app.get_webview_window("main") {
@@ -36,7 +37,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![commands::get_app_data_path])
+        .invoke_handler(tauri::generate_handler![commands::get_app_data_path, commands::get_backend_status])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
