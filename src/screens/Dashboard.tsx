@@ -31,6 +31,13 @@ export default function Dashboard() {
           >
             + Nuevo Activo
           </button>
+          <button
+            type="button"
+            onClick={() => navigate("/depreciation")}
+            className="rounded-md border border-[#458588] px-6 py-2 text-sm font-medium text-[#458588] hover:bg-[#458588]/10"
+          >
+            Depreciación
+          </button>
         </div>
       </div>
     </div>

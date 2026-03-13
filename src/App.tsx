@@ -8,6 +8,7 @@ import { useAppStore } from "./store/appStore";
 import AssetDetail from "./features/assets/AssetDetail";
 import AssetForm from "./features/assets/AssetForm";
 import AssetList from "./features/assets/AssetList";
+import DepreciationPage from "./features/depreciation/DepreciationPage";
 import Dashboard from "./screens/Dashboard";
 import Login from "./screens/Login";
 import SetupWizard from "./screens/SetupWizard";
@@ -106,6 +107,14 @@ function App() {
         element={
           <PrivateRoute>
             <AssetDetail />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/depreciation"
+        element={
+          <PrivateRoute>
+            <DepreciationPage />
           </PrivateRoute>
         }
       />

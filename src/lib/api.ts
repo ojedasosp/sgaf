@@ -88,3 +88,33 @@ export async function apiFetch<T>(
 
   return response.json() as Promise<T>;
 }
+
+/// Trigger depreciation calculation for a given period.
+/// POST /api/v1/depreciation/
+export async function triggerDepreciation(
+  periodMonth: number,
+  periodYear: number,
+  token: string
+): Promise<import("../types/depreciation").DepreciationResponse> {
+  return apiFetch<import("../types/depreciation").DepreciationResponse>(
+    "/depreciation/",
+    {
+      method: "POST",
+      body: JSON.stringify({ period_month: periodMonth, period_year: periodYear }),
+      token,
+    }
+  );
+}
+
+/// Retrieve stored depreciation results for a given period.
+/// GET /api/v1/depreciation/?period_month=M&period_year=Y
+export async function getDepreciationResults(
+  periodMonth: number,
+  periodYear: number,
+  token: string
+): Promise<import("../types/depreciation").DepreciationResponse> {
+  return apiFetch<import("../types/depreciation").DepreciationResponse>(
+    `/depreciation/?period_month=${periodMonth}&period_year=${periodYear}`,
+    { token }
+  );
+}
