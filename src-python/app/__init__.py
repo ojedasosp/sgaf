@@ -19,6 +19,7 @@ def create_app():
 
     # Register blueprints
     from app.routes.assets import assets_bp
+    from app.routes.audit import audit_bp
     from app.routes.auth import auth_bp
     from app.routes.config import config_bp
     from app.routes.health import health_bp
@@ -27,6 +28,7 @@ def create_app():
     app.register_blueprint(config_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(assets_bp)
+    app.register_blueprint(audit_bp)
 
     # Global JSON error handler — never return HTML from Flask
     @app.errorhandler(Exception)

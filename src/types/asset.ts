@@ -35,3 +35,21 @@ export interface CreateAssetPayload {
   category: string;
   depreciation_method: DepreciationMethod;
 }
+
+export type UpdateAssetPayload = Partial<CreateAssetPayload>;
+
+export interface RetireAssetPayload {
+  retirement_date: string; // ISO 8601 date "YYYY-MM-DD"
+}
+
+export interface AuditLogEntry {
+  log_id: number;
+  timestamp: string; // ISO 8601 UTC
+  actor: string;
+  entity_type: string;
+  entity_id: number;
+  action: string; // CREATE | UPDATE | RETIRE
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+}

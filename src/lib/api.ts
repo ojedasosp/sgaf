@@ -73,6 +73,11 @@ export async function apiFetch<T>(
     throw new ApiError(errorMessage, response.status, field, errorCode);
   }
 
+  // Handle no-content responses (e.g., 204 DELETE)
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   // Validate response is JSON before parsing
   const contentType = response.headers.get("content-type");
   if (!contentType?.includes("application/json")) {

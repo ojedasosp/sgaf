@@ -5,6 +5,8 @@ Covers:
         error cases (400), duplicate code (409), unauthenticated (401).
   GET:  success (200), empty list, multiple assets, decimal precision in
         response, ordering, unauthenticated (401).
+  POST /<id>/retire: success (200), audit entry, conflict cases (409), 404, 400, 401.
+  DELETE /<id>: success (204), history protection (409), 404, 401.
 """
 
 import secrets
@@ -14,7 +16,12 @@ import pytest
 from sqlalchemy import insert, select, text
 
 from app.middleware import clear_jwt_secret_cache
-from app.models.tables import audit_logs, fixed_assets
+from app.models.tables import (
+    audit_logs,
+    depreciation_results,
+    fixed_assets,
+    maintenance_events,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -491,3 +498,540 @@ class TestListAssets:
     def test_response_is_json(self, test_client, auth_token):
         resp = _get_assets(test_client, auth_token)
         assert resp.content_type.startswith("application/json")
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/assets/<asset_id> helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_asset(test_client, asset_id: int, token: str):
+    """Helper: GET /api/v1/assets/<asset_id> with auth header."""
+    return test_client.get(
+        f"/api/v1/assets/{asset_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def _patch_asset(test_client, asset_id: int, payload: dict, token: str):
+    """Helper: PATCH /api/v1/assets/<asset_id> with auth header."""
+    return test_client.patch(
+        f"/api/v1/assets/{asset_id}",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/assets/<asset_id> — get single asset (Task 6)
+# ---------------------------------------------------------------------------
+
+
+class TestGetAsset:
+    def test_returns_200_with_full_asset(self, test_client, auth_token, test_engine):
+        """Returns 200 with full asset dict when asset exists (AC1)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _get_asset(test_client, asset_id, auth_token)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "data" in body
+        asset = body["data"]
+        assert asset["asset_id"] == asset_id
+        assert asset["code"] == "LAP-001"
+        assert asset["historical_cost"] == "1200.0000"
+        assert asset["salvage_value"] == "120.0000"
+
+    def test_returns_all_expected_fields(self, test_client, auth_token, test_engine):
+        """Response data contains all asset fields."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _get_asset(test_client, asset_id, auth_token)
+        asset = resp.get_json()["data"]
+        for key in [
+            "asset_id",
+            "code",
+            "description",
+            "historical_cost",
+            "salvage_value",
+            "useful_life_months",
+            "acquisition_date",
+            "category",
+            "depreciation_method",
+            "status",
+            "retirement_date",
+            "created_at",
+            "updated_at",
+        ]:
+            assert key in asset, f"Missing field: {key}"
+
+    def test_returns_404_for_nonexistent_asset(self, test_client, auth_token):
+        """Returns 404 when asset_id does not exist."""
+        resp = _get_asset(test_client, 9999, auth_token)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "NOT_FOUND"
+
+    def test_returns_401_when_unauthenticated(self, test_client, test_engine):
+        """Returns 401 when no auth header is provided."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = test_client.get(f"/api/v1/assets/{asset_id}")
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "UNAUTHORIZED"
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/v1/assets/<asset_id> — partial update (Task 7)
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateAsset:
+    def test_partial_update_single_field_returns_200(self, test_client, auth_token, test_engine):
+        """Partial update of description returns 200 with updated asset (AC2, AC3)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client, asset_id, {"description": "HP Laptop 15 pulgadas"}, auth_token
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"]["description"] == "HP Laptop 15 pulgadas"
+        assert body["data"]["code"] == "LAP-001"  # Unchanged
+
+    def test_partial_update_writes_one_audit_entry_per_field(
+        self, test_client, auth_token, test_engine
+    ):
+        """Each changed field produces exactly one audit entry (AC3)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _patch_asset(
+            test_client,
+            asset_id,
+            {"description": "HP Laptop 15 pulgadas", "category": "Tecnología"},
+            auth_token,
+        )
+        with test_engine.connect() as conn:
+            logs = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.entity_type == "asset",
+                    audit_logs.c.entity_id == asset_id,
+                    audit_logs.c.action == "UPDATE",
+                )
+            ).fetchall()
+        assert len(logs) == 2
+        fields_logged = {log.field for log in logs}
+        assert fields_logged == {"description", "category"}
+
+    def test_noop_update_returns_200_with_zero_audit_entries(
+        self, test_client, auth_token, test_engine
+    ):
+        """Submitting same values produces no audit entries (AC3 — unchanged fields skipped)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        # Submit the exact same description that's already in the DB
+        resp = _patch_asset(test_client, asset_id, {"description": "Test Asset"}, auth_token)
+        assert resp.status_code == 200
+        with test_engine.connect() as conn:
+            logs = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.action == "UPDATE",
+                    audit_logs.c.entity_id == asset_id,
+                )
+            ).fetchall()
+        assert len(logs) == 0
+
+    def test_monetary_field_audit_stores_text_representation(
+        self, test_client, auth_token, test_engine
+    ):
+        """Audit entry for monetary field change stores TEXT representation (AC4)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", historical_cost="1200.0000")
+        _patch_asset(test_client, asset_id, {"historical_cost": "1500"}, auth_token)
+        with test_engine.connect() as conn:
+            log = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.action == "UPDATE",
+                    audit_logs.c.entity_id == asset_id,
+                    audit_logs.c.field == "historical_cost",
+                )
+            ).fetchone()
+        assert log is not None
+        assert log.old_value == "1200.0000"
+        assert log.new_value == "1500.0000"
+
+    def test_multi_field_update_produces_correct_audit_count(
+        self, test_client, auth_token, test_engine
+    ):
+        """Three changed fields produce exactly 3 audit entries (AC3)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _patch_asset(
+            test_client,
+            asset_id,
+            {"description": "New Desc", "category": "Nueva Cat", "useful_life_months": 48},
+            auth_token,
+        )
+        with test_engine.connect() as conn:
+            logs = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.action == "UPDATE",
+                    audit_logs.c.entity_id == asset_id,
+                )
+            ).fetchall()
+        assert len(logs) == 3
+
+    def test_code_conflict_returns_409(self, test_client, auth_token, test_engine):
+        """Changing code to an existing code returns 409 CONFLICT."""
+        with test_engine.connect() as conn:
+            _insert_asset(conn, code="LAP-001")
+            asset_id_2 = _insert_asset(conn, code="LAP-002")
+        resp = _patch_asset(test_client, asset_id_2, {"code": "LAP-001"}, auth_token)
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "CONFLICT"
+
+    def test_validation_error_returns_400(self, test_client, auth_token, test_engine):
+        """Invalid field value returns 400 VALIDATION_ERROR."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(test_client, asset_id, {"historical_cost": "-999"}, auth_token)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "VALIDATION_ERROR"
+        assert resp.get_json()["field"] == "historical_cost"
+
+    def test_nonexistent_asset_returns_404(self, test_client, auth_token):
+        """PATCH on non-existent asset_id returns 404."""
+        resp = _patch_asset(test_client, 9999, {"description": "Does not exist"}, auth_token)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "NOT_FOUND"
+
+    def test_unauthenticated_returns_401(self, test_client, test_engine):
+        """PATCH without auth header returns 401."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = test_client.patch(f"/api/v1/assets/{asset_id}", json={"description": "x"})
+        assert resp.status_code == 401
+
+    def test_actor_in_audit_entry_is_company_name(self, test_client, auth_token, test_engine):
+        """Audit entry actor equals company_name from app_config (AC3)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _patch_asset(test_client, asset_id, {"description": "Updated"}, auth_token)
+        with test_engine.connect() as conn:
+            log = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.action == "UPDATE",
+                    audit_logs.c.entity_id == asset_id,
+                )
+            ).fetchone()
+        # _setup_auth sets company_name='Test'
+        assert log is not None
+        assert log.actor == "Test"
+
+    def test_empty_payload_returns_400(self, test_client, auth_token, test_engine):
+        """Empty or non-editable-field payload returns 400."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(test_client, asset_id, {}, auth_token)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "VALIDATION_ERROR"
+
+    def test_patch_with_salvage_gte_historical_cost_returns_400(
+        self, test_client, auth_token, test_engine
+    ):
+        """Supplying both monetary fields where salvage >= historical returns 400."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client,
+            asset_id,
+            {"historical_cost": "100", "salvage_value": "200"},
+            auth_token,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "VALIDATION_ERROR"
+        assert resp.get_json()["field"] == "salvage_value"
+
+    def test_updated_at_changes_after_update(self, test_client, auth_token, test_engine):
+        """updated_at timestamp is refreshed after a successful edit."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", updated_at="2026-01-01T00:00:00Z")
+        resp = _patch_asset(test_client, asset_id, {"description": "Changed"}, auth_token)
+        assert resp.status_code == 200
+        new_updated_at = resp.get_json()["data"]["updated_at"]
+        assert new_updated_at != "2026-01-01T00:00:00Z"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/assets/<asset_id>/retire helpers
+# ---------------------------------------------------------------------------
+
+
+def _retire_asset(test_client, asset_id: int, payload: dict, token: str):
+    """Helper: POST to /api/v1/assets/<asset_id>/retire with auth header."""
+    return test_client.post(
+        f"/api/v1/assets/{asset_id}/retire",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def _delete_asset(test_client, asset_id: int, token: str):
+    """Helper: DELETE /api/v1/assets/<asset_id> with auth header."""
+    return test_client.delete(
+        f"/api/v1/assets/{asset_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/assets/<asset_id>/retire — retire asset (Tasks 4 & 5)
+# ---------------------------------------------------------------------------
+
+
+class TestRetireAsset:
+    def test_returns_200_with_retired_asset(self, test_client, auth_token, test_engine):
+        """Retiring an active asset returns 200 with status=retired and retirement_date set."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _retire_asset(test_client, asset_id, {"retirement_date": "2026-03-15"}, auth_token)
+        assert resp.status_code == 200
+        asset = resp.get_json()["data"]
+        assert asset["status"] == "retired"
+        assert asset["retirement_date"] == "2026-03-15"
+        assert asset["updated_at"] != "2026-03-01T00:00:00Z"
+
+    def test_updated_at_changes_after_retire(self, test_client, auth_token, test_engine):
+        """updated_at is refreshed after retirement."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", updated_at="2026-01-01T00:00:00Z")
+        resp = _retire_asset(test_client, asset_id, {"retirement_date": "2026-03-15"}, auth_token)
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["updated_at"] != "2026-01-01T00:00:00Z"
+
+    def test_retire_audit_entry_created(self, test_client, auth_token, test_engine):
+        """RETIRE action is written to audit_logs with new_value=retirement_date (AC1)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _retire_asset(test_client, asset_id, {"retirement_date": "2026-03-15"}, auth_token)
+        with test_engine.connect() as conn:
+            log = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.entity_type == "asset",
+                    audit_logs.c.entity_id == asset_id,
+                    audit_logs.c.action == "RETIRE",
+                )
+            ).fetchone()
+        assert log is not None
+        assert log.action == "RETIRE"
+        assert log.new_value == "2026-03-15"
+        assert log.field is None
+        assert log.old_value is None
+
+    def test_retire_audit_actor_is_company_name(self, test_client, auth_token, test_engine):
+        """Audit actor equals company_name from app_config (trimmed) (AC1)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _retire_asset(test_client, asset_id, {"retirement_date": "2026-03-15"}, auth_token)
+        with test_engine.connect() as conn:
+            log = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.action == "RETIRE",
+                    audit_logs.c.entity_id == asset_id,
+                )
+            ).fetchone()
+        # _setup_auth sets company_name='Test'
+        assert log is not None
+        assert log.actor == "Test"
+
+    def test_returns_409_when_already_retired(self, test_client, auth_token, test_engine):
+        """Retiring an already-retired asset returns 409 CONFLICT (AC3)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", status="retired")
+        resp = _retire_asset(test_client, asset_id, {"retirement_date": "2026-03-15"}, auth_token)
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "CONFLICT"
+
+    def test_returns_409_when_in_maintenance(self, test_client, auth_token, test_engine):
+        """Retiring an in_maintenance asset returns 409 with maintenance message (AC4)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", status="in_maintenance")
+        resp = _retire_asset(test_client, asset_id, {"retirement_date": "2026-03-15"}, auth_token)
+        assert resp.status_code == 409
+        body = resp.get_json()
+        assert body["error"] == "CONFLICT"
+        assert "mantenimiento" in body["message"]
+
+    def test_returns_409_when_has_open_maintenance_event(
+        self, test_client, auth_token, test_engine
+    ):
+        """Retiring an active asset with open maintenance event returns 409 (AC4)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+            conn.execute(
+                insert(maintenance_events).values(
+                    asset_id=asset_id,
+                    description="Open event",
+                    start_date="2026-03-01",
+                    status="open",
+                    created_at="2026-03-01T00:00:00Z",
+                    updated_at="2026-03-01T00:00:00Z",
+                )
+            )
+            conn.commit()
+        resp = _retire_asset(test_client, asset_id, {"retirement_date": "2026-03-15"}, auth_token)
+        assert resp.status_code == 409
+        assert "mantenimiento" in resp.get_json()["message"]
+
+    def test_returns_404_when_asset_not_found(self, test_client, auth_token):
+        """Retiring a non-existent asset_id returns 404."""
+        resp = _retire_asset(test_client, 9999, {"retirement_date": "2026-03-15"}, auth_token)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "NOT_FOUND"
+
+    def test_returns_400_when_retirement_date_missing(self, test_client, auth_token, test_engine):
+        """Missing retirement_date body returns 400 VALIDATION_ERROR."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _retire_asset(test_client, asset_id, {}, auth_token)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "VALIDATION_ERROR"
+        assert resp.get_json()["field"] == "retirement_date"
+
+    def test_returns_400_when_retirement_date_invalid_format(
+        self, test_client, auth_token, test_engine
+    ):
+        """Invalid retirement_date format returns 400 VALIDATION_ERROR."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        for bad_date in ["2026/03/12", "not-a-date", "12-03-2026"]:
+            resp = _retire_asset(test_client, asset_id, {"retirement_date": bad_date}, auth_token)
+            assert resp.status_code == 400, f"Expected 400 for date: {bad_date}"
+            assert resp.get_json()["field"] == "retirement_date"
+
+    def test_returns_401_when_unauthenticated(self, test_client, test_engine):
+        """Retire without auth header returns 401."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = test_client.post(
+            f"/api/v1/assets/{asset_id}/retire", json={"retirement_date": "2026-03-15"}
+        )
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/assets/<asset_id> — delete asset (Task 5)
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteAsset:
+    def test_returns_204_and_asset_deleted(self, test_client, auth_token, test_engine):
+        """Deleting an asset with no history returns 204 (empty body) and removes from DB (AC6)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _delete_asset(test_client, asset_id, auth_token)
+        assert resp.status_code == 204
+        assert resp.data == b""
+        # Verify asset is gone from DB
+        with test_engine.connect() as conn:
+            row = conn.execute(
+                select(fixed_assets).where(fixed_assets.c.asset_id == asset_id)
+            ).fetchone()
+        assert row is None
+
+    def test_deleted_asset_returns_404_on_get(self, test_client, auth_token, test_engine):
+        """After deletion, GET on the same asset_id returns 404."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _delete_asset(test_client, asset_id, auth_token)
+        resp = test_client.get(
+            f"/api/v1/assets/{asset_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_returns_409_when_has_depreciation_history(self, test_client, auth_token, test_engine):
+        """Deleting an asset with depreciation_results returns 409 CONFLICT (AC5)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+            conn.execute(
+                insert(depreciation_results).values(
+                    asset_id=asset_id,
+                    period_month=3,
+                    period_year=2026,
+                    depreciation_amount="18.0000",
+                    accumulated_depreciation="18.0000",
+                    book_value="1182.0000",
+                    calculated_at="2026-03-01T00:00:00Z",
+                )
+            )
+            conn.commit()
+        resp = _delete_asset(test_client, asset_id, auth_token)
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "CONFLICT"
+
+    def test_returns_409_when_has_maintenance_history(self, test_client, auth_token, test_engine):
+        """Deleting an asset with maintenance_events returns 409 CONFLICT (AC5)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+            conn.execute(
+                insert(maintenance_events).values(
+                    asset_id=asset_id,
+                    description="Some maintenance",
+                    start_date="2026-03-01",
+                    status="closed",
+                    created_at="2026-03-01T00:00:00Z",
+                    updated_at="2026-03-01T00:00:00Z",
+                )
+            )
+            conn.commit()
+        resp = _delete_asset(test_client, asset_id, auth_token)
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "CONFLICT"
+
+    def test_returns_404_when_asset_not_found(self, test_client, auth_token):
+        """Deleting a non-existent asset returns 404."""
+        resp = _delete_asset(test_client, 9999, auth_token)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "NOT_FOUND"
+
+    def test_delete_audit_entry_written(self, test_client, auth_token, test_engine):
+        """Deleting a clean asset writes a DELETE entry to audit_logs (architecture mandate)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _delete_asset(test_client, asset_id, auth_token)
+        with test_engine.connect() as conn:
+            log = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.entity_type == "asset",
+                    audit_logs.c.entity_id == asset_id,
+                    audit_logs.c.action == "DELETE",
+                )
+            ).fetchone()
+        assert log is not None
+        assert log.action == "DELETE"
+        assert log.field is None
+        assert log.old_value is None
+        assert log.new_value is None
+
+    def test_delete_audit_actor_is_company_name(self, test_client, auth_token, test_engine):
+        """DELETE audit entry actor equals company_name from app_config (trimmed)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        _delete_asset(test_client, asset_id, auth_token)
+        with test_engine.connect() as conn:
+            log = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.action == "DELETE",
+                    audit_logs.c.entity_id == asset_id,
+                )
+            ).fetchone()
+        # _setup_auth sets company_name='Test'
+        assert log is not None
+        assert log.actor == "Test"
+
+    def test_returns_401_when_unauthenticated(self, test_client, test_engine):
+        """DELETE without auth header returns 401."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = test_client.delete(f"/api/v1/assets/{asset_id}")
+        assert resp.status_code == 401
