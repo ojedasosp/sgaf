@@ -8,7 +8,8 @@ import Dashboard from "../screens/Dashboard";
 import { useAppStore } from "../store/appStore";
 
 // Mock Tauri event listener — simulates backend-ready and backend-error events
-const mockListeners: Record<string, ((event: { payload: unknown }) => void)[]> = {};
+const mockListeners: Record<string, ((event: { payload: unknown }) => void)[]> =
+  {};
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn((event: string, handler: (e: { payload: unknown }) => void) => {
@@ -36,7 +37,7 @@ function mockFetchResponse(body: unknown, status = 200) {
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
-    })
+    }),
   );
 }
 
@@ -53,7 +54,7 @@ function renderApp() {
       <MemoryRouter>
         <App />
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -65,7 +66,9 @@ describe("App — backend lifecycle gating", () => {
 
   it("shows LoadingSpinner while waiting for backend", () => {
     renderApp();
-    expect(screen.getByRole("status", { name: /loading/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: /loading/i }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/iniciando sgaf/i)).toBeInTheDocument();
   });
 
@@ -73,17 +76,23 @@ describe("App — backend lifecycle gating", () => {
     mockFetchResponse({ data: { setup_complete: true } });
 
     renderApp();
-    expect(screen.getByRole("status", { name: /loading/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: /loading/i }),
+    ).toBeInTheDocument();
 
     await act(async () => {
       emit("backend-ready", 5000);
     });
 
     // Should navigate to /login (Login screen with password form)
-    expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: /loading/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("SGAF")).toBeInTheDocument();
     expect(screen.getByLabelText(/contraseña/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /ingresar/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /ingresar/i }),
+    ).toBeInTheDocument();
   });
 
   it("navigates to wizard when setup is incomplete after backend-ready", async () => {
@@ -96,14 +105,16 @@ describe("App — backend lifecycle gating", () => {
     });
 
     // Should navigate to /wizard (SetupWizard)
-    expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: /loading/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/company information/i)).toBeInTheDocument();
     expect(screen.getByText(/step 1 of 2/i)).toBeInTheDocument();
   });
 
   it("navigates to wizard on setup-status fetch failure (safe fallback)", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error("Network error")
+      new Error("Network error"),
     );
 
     renderApp();
@@ -113,7 +124,9 @@ describe("App — backend lifecycle gating", () => {
     });
 
     // Should fall back to /wizard
-    expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: /loading/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/company information/i)).toBeInTheDocument();
   });
 
@@ -125,7 +138,9 @@ describe("App — backend lifecycle gating", () => {
     });
 
     // Error message visible — never a blank screen
-    expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: /loading/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/error al iniciar sgaf/i)).toBeInTheDocument();
     expect(screen.getByText(/backend failed to start/i)).toBeInTheDocument();
   });
@@ -147,7 +162,7 @@ describe("App — PrivateRoute and Dashboard routing", () => {
         <MemoryRouter initialEntries={["/dashboard"]}>
           <App />
         </MemoryRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     // App starts in loading state; trigger backend-ready so routing resolves
@@ -161,15 +176,53 @@ describe("App — PrivateRoute and Dashboard routing", () => {
     expect(screen.queryByText(/dashboard/i)).not.toBeInTheDocument();
   });
 
-  it("Dashboard component renders its placeholder content", () => {
-    // The full token → /dashboard navigation flow is covered by Login.test.tsx.
-    // This test verifies the Dashboard component itself renders correctly.
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
+  it("Dashboard component renders SGAF title and period navigator", async () => {
+    // Story 3.4: Dashboard replaced with Monthly Close Dashboard.
+    // Needs QueryClientProvider + fetch mocks (uses TanStack Query).
+    // The full login → /dashboard navigation flow is covered by Login.test.tsx.
+    useAppStore.getState().setToken("test-token");
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      (url: string) => {
+        if (url.includes("/assets/")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ data: [], total: 0 }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        if (url.includes("/depreciation/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                data: [],
+                total: 0,
+                period_month: 3,
+                period_year: 2026,
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+        return Promise.reject(new Error(`Unhandled: ${url}`));
+      },
     );
-    expect(screen.getByText("SGAF")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /nuevo activo/i })).toBeInTheDocument();
+
+    const testQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={testQueryClient}>
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Header with SGAF title is immediately visible
+    expect(screen.getByRole("heading", { name: "SGAF" })).toBeInTheDocument();
+    // Period navigator arrows are rendered
+    expect(screen.getByLabelText("Mes anterior")).toBeInTheDocument();
+    expect(screen.getByLabelText("Mes siguiente")).toBeInTheDocument();
   });
 });
