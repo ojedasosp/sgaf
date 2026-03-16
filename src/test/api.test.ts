@@ -48,7 +48,7 @@ describe("api.ts — Flask HTTP communication", () => {
           headers: expect.objectContaining({
             "Content-Type": "application/json",
           }),
-        })
+        }),
       );
     });
 
@@ -67,7 +67,7 @@ describe("api.ts — Flask HTTP communication", () => {
           headers: expect.objectContaining({
             Authorization: "Bearer jwt-token-123",
           }),
-        })
+        }),
       );
     });
 
@@ -136,7 +136,7 @@ describe("api.ts — Flask HTTP communication", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ name: "Asset 1" }),
-        })
+        }),
       );
     });
 
@@ -156,13 +156,13 @@ describe("api.ts — Flask HTTP communication", () => {
         expect.objectContaining({
           "Content-Type": "application/json",
           "X-Custom": "value",
-        })
+        }),
       );
     });
 
     it("handles network failure gracefully", async () => {
       vi.mocked(globalThis.fetch).mockRejectedValueOnce(
-        new Error("Network error")
+        new Error("Network error"),
       );
 
       await expect(apiFetch("/endpoint")).rejects.toThrow("Network error");
@@ -187,7 +187,7 @@ describe("api.ts — Flask HTTP communication", () => {
       vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await expect(apiFetch("/endpoint")).rejects.toThrow(
-        "Expected JSON response, got text/html"
+        "Expected JSON response, got text/html",
       );
     });
 
@@ -199,34 +199,40 @@ describe("api.ts — Flask HTTP communication", () => {
       vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await expect(apiFetch("/endpoint")).rejects.toThrow(
-        "Expected JSON response"
+        "Expected JSON response",
       );
     });
 
     it("clears Zustand token on 401 when token was provided", async () => {
       useAppStore.getState().setToken("stale-jwt");
       const mockResponse = new Response(
-        JSON.stringify({ error: "UNAUTHORIZED", message: "Invalid or missing token" }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "UNAUTHORIZED",
+          message: "Invalid or missing token",
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
       );
       vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
-      await expect(apiFetch("/protected", { token: "stale-jwt" })).rejects.toThrow(
-        "Invalid or missing token"
-      );
+      await expect(
+        apiFetch("/protected", { token: "stale-jwt" }),
+      ).rejects.toThrow("Invalid or missing token");
       expect(useAppStore.getState().token).toBeNull();
     });
 
     it("does not clear token on 401 when no token was sent (e.g. login)", async () => {
       useAppStore.getState().setToken("existing-jwt");
       const mockResponse = new Response(
-        JSON.stringify({ error: "UNAUTHORIZED", message: "Invalid credentials" }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "UNAUTHORIZED",
+          message: "Invalid credentials",
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
       );
       vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse);
 
       await expect(apiFetch("/auth/login", { method: "POST" })).rejects.toThrow(
-        "Invalid credentials"
+        "Invalid credentials",
       );
       // Token should remain — this was a login attempt, not a session rejection
       expect(useAppStore.getState().token).toBe("existing-jwt");

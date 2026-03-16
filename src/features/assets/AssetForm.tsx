@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { useCreateAsset } from "../../hooks/useAssets";
 import type { CreateAssetPayload, DepreciationMethod } from "../../types/asset";
+import AppLayout from "@/components/layout/AppLayout";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,7 +51,7 @@ interface FormErrors {
 
 function validateField(
   field: keyof FormValues,
-  values: FormValues
+  values: FormValues,
 ): string | undefined {
   const value = values[field];
   const strVal = String(value).trim();
@@ -68,7 +69,8 @@ function validateField(
     case "historical_cost": {
       if (!strVal) return "El costo histórico es obligatorio";
       const n = Number(strVal);
-      if (isNaN(n) || strVal === "") return "El costo histórico debe ser un número válido";
+      if (isNaN(n) || strVal === "")
+        return "El costo histórico debe ser un número válido";
       if (n <= 0) return "El costo histórico debe ser mayor a 0";
       break;
     }
@@ -155,16 +157,15 @@ export default function AssetForm() {
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
-  const [touched, setTouched] = useState<Partial<Record<keyof FormValues, boolean>>>({});
+  const [touched, setTouched] = useState<
+    Partial<Record<keyof FormValues, boolean>>
+  >({});
 
   // -------------------------------------------------------------------------
   // Event handlers
   // -------------------------------------------------------------------------
 
-  function handleChange(
-    field: keyof FormValues,
-    value: string
-  ) {
+  function handleChange(field: keyof FormValues, value: string) {
     setValues((prev) => ({ ...prev, [field]: value }));
     // Clear error for field as soon as user starts editing again
     if (errors[field]) {
@@ -187,7 +188,7 @@ export default function AssetForm() {
 
     // Mark all fields as touched
     const allTouched = Object.fromEntries(
-      Object.keys(values).map((k) => [k, true])
+      Object.keys(values).map((k) => [k, true]),
     ) as Record<keyof FormValues, boolean>;
     setTouched(allTouched);
 
@@ -219,7 +220,8 @@ export default function AssetForm() {
         navigate(`/assets/${result.data.asset_id}`);
       },
       onError: (err) => {
-        const message = err instanceof Error ? err.message : "Error al registrar el activo";
+        const message =
+          err instanceof Error ? err.message : "Error al registrar el activo";
         if (err instanceof ApiError && err.field && err.field in values) {
           const field = err.field as keyof FormValues;
           setErrors((prev) => ({ ...prev, [field]: message }));
@@ -233,9 +235,14 @@ export default function AssetForm() {
   }
 
   function handleEscape() {
-    const isDirty = Object.values(values).some((v) => String(v).trim() !== "" && v !== "straight_line");
+    const isDirty = Object.values(values).some(
+      (v) => String(v).trim() !== "" && v !== "straight_line",
+    );
     if (isDirty) {
-      if (!window.confirm("¿Descartar cambios? Los datos ingresados se perderán.")) return;
+      if (
+        !window.confirm("¿Descartar cambios? Los datos ingresados se perderán.")
+      )
+        return;
     }
     navigate(-1);
   }
@@ -265,251 +272,256 @@ export default function AssetForm() {
   // -------------------------------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="mx-auto max-w-2xl">
-        {/* Header */}
-        <div className="mb-6 flex items-center gap-4">
-          <button
-            type="button"
-            onClick={handleEscape}
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            ← Volver
-          </button>
-          <h1 className="text-2xl font-bold text-foreground">Nuevo Activo</h1>
-        </div>
-
-        <form onSubmit={handleSubmit} noValidate>
-          {/* ----------------------------------------------------------------
-               Section 1: Identificación
-          ---------------------------------------------------------------- */}
-          <div className="mb-6 rounded-lg border border-border bg-[#f2e5bc] p-6">
-            <h2 className="mb-4 text-lg font-semibold text-[#3c3836]">
-              Identificación
-            </h2>
-
-            <div className="space-y-4">
-              {/* Code */}
-              <div>
-                <label
-                  htmlFor="code"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Código <span className="text-[#cc241d]">*</span>
-                </label>
-                <input
-                  id="code"
-                  type="text"
-                  value={values.code}
-                  onChange={(e) => handleChange("code", e.target.value)}
-                  onBlur={() => handleBlur("code")}
-                  className={fieldClass("code")}
-                  placeholder="LAP-001"
-                  autoFocus
-                />
-                {showError("code")}
-              </div>
-
-              {/* Description */}
-              <div>
-                <label
-                  htmlFor="description"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Descripción <span className="text-[#cc241d]">*</span>
-                </label>
-                <input
-                  id="description"
-                  type="text"
-                  value={values.description}
-                  onChange={(e) => handleChange("description", e.target.value)}
-                  onBlur={() => handleBlur("description")}
-                  className={fieldClass("description")}
-                  placeholder="HP Laptop 14 pulgadas"
-                />
-                {showError("description")}
-              </div>
-
-              {/* Category */}
-              <div>
-                <label
-                  htmlFor="category"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Categoría <span className="text-[#cc241d]">*</span>
-                </label>
-                <input
-                  id="category"
-                  type="text"
-                  value={values.category}
-                  onChange={(e) => handleChange("category", e.target.value)}
-                  onBlur={() => handleBlur("category")}
-                  className={fieldClass("category")}
-                  placeholder="Equipos de Cómputo"
-                />
-                {showError("category")}
-              </div>
-            </div>
-          </div>
-
-          {/* ----------------------------------------------------------------
-               Section 2: Valorización
-          ---------------------------------------------------------------- */}
-          <div className="mb-6 rounded-lg border border-border bg-[#f2e5bc] p-6">
-            <h2 className="mb-4 text-lg font-semibold text-[#3c3836]">
-              Valorización
-            </h2>
-
-            <div className="space-y-4">
-              {/* Historical cost */}
-              <div>
-                <label
-                  htmlFor="historical_cost"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Costo Histórico <span className="text-[#cc241d]">*</span>
-                </label>
-                <input
-                  id="historical_cost"
-                  type="text"
-                  inputMode="decimal"
-                  value={values.historical_cost}
-                  onChange={(e) =>
-                    handleChange("historical_cost", e.target.value)
-                  }
-                  onBlur={() => handleBlur("historical_cost")}
-                  className={`${fieldClass("historical_cost")} font-mono text-right`}
-                  placeholder="1200.00"
-                />
-                {showError("historical_cost")}
-              </div>
-
-              {/* Salvage value */}
-              <div>
-                <label
-                  htmlFor="salvage_value"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Valor Residual <span className="text-[#cc241d]">*</span>
-                </label>
-                <input
-                  id="salvage_value"
-                  type="text"
-                  inputMode="decimal"
-                  value={values.salvage_value}
-                  onChange={(e) =>
-                    handleChange("salvage_value", e.target.value)
-                  }
-                  onBlur={() => handleBlur("salvage_value")}
-                  className={`${fieldClass("salvage_value")} font-mono text-right`}
-                  placeholder="120.00"
-                />
-                {showError("salvage_value")}
-              </div>
-
-              {/* Useful life months */}
-              <div>
-                <label
-                  htmlFor="useful_life_months"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Vida Útil (meses) <span className="text-[#cc241d]">*</span>
-                </label>
-                <input
-                  id="useful_life_months"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={values.useful_life_months}
-                  onChange={(e) =>
-                    handleChange("useful_life_months", e.target.value)
-                  }
-                  onBlur={() => handleBlur("useful_life_months")}
-                  className={fieldClass("useful_life_months")}
-                  placeholder="60"
-                />
-                {showError("useful_life_months")}
-              </div>
-
-              {/* Acquisition date */}
-              <div>
-                <label
-                  htmlFor="acquisition_date"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Fecha de Adquisición <span className="text-[#cc241d]">*</span>
-                </label>
-                <input
-                  id="acquisition_date"
-                  type="date"
-                  value={values.acquisition_date}
-                  onChange={(e) =>
-                    handleChange("acquisition_date", e.target.value)
-                  }
-                  onBlur={() => handleBlur("acquisition_date")}
-                  className={fieldClass("acquisition_date")}
-                />
-                {showError("acquisition_date")}
-              </div>
-
-              {/* Depreciation method */}
-              <div>
-                <label
-                  htmlFor="depreciation_method"
-                  className="block text-sm font-medium text-[#665c54]"
-                >
-                  Método de Depreciación{" "}
-                  <span className="text-[#cc241d]">*</span>
-                </label>
-                <select
-                  id="depreciation_method"
-                  value={values.depreciation_method}
-                  onChange={(e) =>
-                    handleChange(
-                      "depreciation_method",
-                      e.target.value as DepreciationMethod
-                    )
-                  }
-                  onBlur={() => handleBlur("depreciation_method")}
-                  className={fieldClass("depreciation_method")}
-                >
-                  {DEPRECIATION_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                {showError("depreciation_method")}
-              </div>
-            </div>
-          </div>
-
-          {/* Submit error */}
-          {errors.submit && (
-            <p className="mb-4 text-sm text-[#cc241d]" role="alert">
-              {errors.submit}
-            </p>
-          )}
-
-          {/* Actions */}
-          <div className="flex justify-end gap-3">
+    <AppLayout>
+      <div className="min-h-screen bg-background p-6">
+        <div className="mx-auto max-w-2xl">
+          {/* Header */}
+          <div className="mb-6 flex items-center gap-4">
             <button
               type="button"
               onClick={handleEscape}
-              className="rounded-md border border-[#bdae93] bg-background px-6 py-2 text-sm font-medium text-foreground hover:bg-accent"
+              className="text-sm text-muted-foreground hover:text-foreground"
             >
-              Cancelar
+              ← Volver
             </button>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="rounded-md bg-[#458588] px-6 py-2 text-sm font-medium text-white hover:bg-[#458588]/90 disabled:opacity-50"
-            >
-              {isPending ? "Guardando..." : "Registrar Activo"}
-            </button>
+            <h1 className="text-2xl font-bold text-foreground">Nuevo Activo</h1>
           </div>
-        </form>
+
+          <form onSubmit={handleSubmit} noValidate>
+            {/* ----------------------------------------------------------------
+               Section 1: Identificación
+          ---------------------------------------------------------------- */}
+            <div className="mb-6 rounded-lg border border-border bg-[#f2e5bc] p-6">
+              <h2 className="mb-4 text-lg font-semibold text-[#3c3836]">
+                Identificación
+              </h2>
+
+              <div className="space-y-4">
+                {/* Code */}
+                <div>
+                  <label
+                    htmlFor="code"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Código <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <input
+                    id="code"
+                    type="text"
+                    value={values.code}
+                    onChange={(e) => handleChange("code", e.target.value)}
+                    onBlur={() => handleBlur("code")}
+                    className={fieldClass("code")}
+                    placeholder="LAP-001"
+                    autoFocus
+                  />
+                  {showError("code")}
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label
+                    htmlFor="description"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Descripción <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <input
+                    id="description"
+                    type="text"
+                    value={values.description}
+                    onChange={(e) =>
+                      handleChange("description", e.target.value)
+                    }
+                    onBlur={() => handleBlur("description")}
+                    className={fieldClass("description")}
+                    placeholder="HP Laptop 14 pulgadas"
+                  />
+                  {showError("description")}
+                </div>
+
+                {/* Category */}
+                <div>
+                  <label
+                    htmlFor="category"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Categoría <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <input
+                    id="category"
+                    type="text"
+                    value={values.category}
+                    onChange={(e) => handleChange("category", e.target.value)}
+                    onBlur={() => handleBlur("category")}
+                    className={fieldClass("category")}
+                    placeholder="Equipos de Cómputo"
+                  />
+                  {showError("category")}
+                </div>
+              </div>
+            </div>
+
+            {/* ----------------------------------------------------------------
+               Section 2: Valorización
+          ---------------------------------------------------------------- */}
+            <div className="mb-6 rounded-lg border border-border bg-[#f2e5bc] p-6">
+              <h2 className="mb-4 text-lg font-semibold text-[#3c3836]">
+                Valorización
+              </h2>
+
+              <div className="space-y-4">
+                {/* Historical cost */}
+                <div>
+                  <label
+                    htmlFor="historical_cost"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Costo Histórico <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <input
+                    id="historical_cost"
+                    type="text"
+                    inputMode="decimal"
+                    value={values.historical_cost}
+                    onChange={(e) =>
+                      handleChange("historical_cost", e.target.value)
+                    }
+                    onBlur={() => handleBlur("historical_cost")}
+                    className={`${fieldClass("historical_cost")} font-mono text-right`}
+                    placeholder="1200.00"
+                  />
+                  {showError("historical_cost")}
+                </div>
+
+                {/* Salvage value */}
+                <div>
+                  <label
+                    htmlFor="salvage_value"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Valor Residual <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <input
+                    id="salvage_value"
+                    type="text"
+                    inputMode="decimal"
+                    value={values.salvage_value}
+                    onChange={(e) =>
+                      handleChange("salvage_value", e.target.value)
+                    }
+                    onBlur={() => handleBlur("salvage_value")}
+                    className={`${fieldClass("salvage_value")} font-mono text-right`}
+                    placeholder="120.00"
+                  />
+                  {showError("salvage_value")}
+                </div>
+
+                {/* Useful life months */}
+                <div>
+                  <label
+                    htmlFor="useful_life_months"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Vida Útil (meses) <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <input
+                    id="useful_life_months"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={values.useful_life_months}
+                    onChange={(e) =>
+                      handleChange("useful_life_months", e.target.value)
+                    }
+                    onBlur={() => handleBlur("useful_life_months")}
+                    className={fieldClass("useful_life_months")}
+                    placeholder="60"
+                  />
+                  {showError("useful_life_months")}
+                </div>
+
+                {/* Acquisition date */}
+                <div>
+                  <label
+                    htmlFor="acquisition_date"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Fecha de Adquisición{" "}
+                    <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <input
+                    id="acquisition_date"
+                    type="date"
+                    value={values.acquisition_date}
+                    onChange={(e) =>
+                      handleChange("acquisition_date", e.target.value)
+                    }
+                    onBlur={() => handleBlur("acquisition_date")}
+                    className={fieldClass("acquisition_date")}
+                  />
+                  {showError("acquisition_date")}
+                </div>
+
+                {/* Depreciation method */}
+                <div>
+                  <label
+                    htmlFor="depreciation_method"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Método de Depreciación{" "}
+                    <span className="text-[#cc241d]">*</span>
+                  </label>
+                  <select
+                    id="depreciation_method"
+                    value={values.depreciation_method}
+                    onChange={(e) =>
+                      handleChange(
+                        "depreciation_method",
+                        e.target.value as DepreciationMethod,
+                      )
+                    }
+                    onBlur={() => handleBlur("depreciation_method")}
+                    className={fieldClass("depreciation_method")}
+                  >
+                    {DEPRECIATION_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  {showError("depreciation_method")}
+                </div>
+              </div>
+            </div>
+
+            {/* Submit error */}
+            {errors.submit && (
+              <p className="mb-4 text-sm text-[#cc241d]" role="alert">
+                {errors.submit}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleEscape}
+                className="rounded-md border border-[#bdae93] bg-background px-6 py-2 text-sm font-medium text-foreground hover:bg-accent"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="rounded-md bg-[#458588] px-6 py-2 text-sm font-medium text-white hover:bg-[#458588]/90 disabled:opacity-50"
+              >
+                {isPending ? "Guardando..." : "Registrar Activo"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

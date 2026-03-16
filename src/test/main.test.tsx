@@ -9,7 +9,7 @@ import App from "../App";
 // Mock Tauri events
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn((_event: string, _handler: (e: { payload: unknown }) => void) =>
-    Promise.resolve(() => {})
+    Promise.resolve(() => {}),
   ),
 }));
 
@@ -40,7 +40,7 @@ describe("main.tsx — React entry point with providers", () => {
               <App />
             </MemoryRouter>
           </QueryClientProvider>
-        </React.StrictMode>
+        </React.StrictMode>,
       );
 
       // If providers are missing, React would throw
@@ -53,7 +53,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
 
       // MemoryRouter should have initialized location hook
@@ -66,7 +66,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
 
       // useQuery and other hooks should work inside this provider
@@ -83,7 +83,7 @@ describe("main.tsx — React entry point with providers", () => {
               <App />
             </MemoryRouter>
           </QueryClientProvider>
-        </React.StrictMode>
+        </React.StrictMode>,
       );
 
       expect(container).toBeDefined();
@@ -97,7 +97,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
 
       // App shows loading state initially
@@ -113,7 +113,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
 
       // App should render successfully with all providers
@@ -126,7 +126,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
 
       // MemoryRouter initializes history/location
@@ -142,7 +142,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
 
       // Verify queryClient has expected methods
@@ -156,7 +156,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
       unmount1();
 
@@ -166,7 +166,7 @@ describe("main.tsx — React entry point with providers", () => {
           <MemoryRouter>
             <App />
           </MemoryRouter>
-        </QueryClientProvider>
+        </QueryClientProvider>,
       );
 
       expect(container).toBeDefined();
@@ -184,7 +184,7 @@ describe("main.tsx — React entry point with providers", () => {
             <MemoryRouter>
               <App />
             </MemoryRouter>
-          </QueryClientProvider>
+          </QueryClientProvider>,
         );
       }).not.toThrow();
 

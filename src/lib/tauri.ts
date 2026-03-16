@@ -46,3 +46,8 @@ export async function saveFilePicker(options?: {
     filters: options?.filters,
   });
 }
+
+/// Writes binary content (as Uint8Array) to a file path via Tauri command.
+export async function writeBinaryFile(path: string, content: Uint8Array): Promise<void> {
+  return invoke<void>("write_binary_file", { path, content: Array.from(content) });
+}

@@ -2,7 +2,9 @@ interface LoadingSpinnerProps {
   message?: string;
 }
 
-export default function LoadingSpinner({ message = "Cargando..." }: LoadingSpinnerProps) {
+export default function LoadingSpinner({
+  message = "Cargando...",
+}: LoadingSpinnerProps) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
       <div

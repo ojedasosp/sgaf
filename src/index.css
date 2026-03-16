@@ -1,26 +1,47 @@
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-  }
+@theme {
+  /* ── Gruvbox Light Background Scale ── */
+  --color-bg: #fbf1c7; /* bg-bg    — app background */
+  --color-bg0s: #f2e5bc; /* bg-bg0s  — cards, surfaces, panels */
+  --color-bg1: #ebdbb2; /* bg-bg1   — sidebar, secondary surfaces */
+  --color-bg2: #d5c4a1; /* bg-bg2   — borders, dividers, skeleton */
+  --color-bg3: #bdae93; /* bg-bg3   — input borders, subtle separators */
 
+  /* ── Gruvbox Light Text Scale ── */
+  --color-fg1: #3c3836; /* text-fg1 — primary text */
+  --color-fg3: #665c54; /* text-fg3 — secondary text, labels */
+  --color-fg4: #7c6f64; /* text-fg4 — muted text, placeholders */
+
+  /* ── Semantic Accent Colors ── */
+  --color-primary: #458588; /* text-primary / bg-primary — CTA, links, active */
+  --color-primary-dark: #076678; /* hover, focus states */
+  --color-success: #98971a; /* calculated, complete (green) */
+  --color-success-dark: #79740e; /* period closed (bold green) */
+  --color-warning: #d79921; /* pending (yellow) */
+  --color-danger: #cc241d; /* error, blocked, missing (red) */
+  --color-muted: #7c6f64; /* retired/inactive assets */
+  --color-aqua: #689d6a; /* secondary badges */
+
+  /* ── Layout ── */
+  --width-sidebar: 240px;
+
+  /* ── Fonts ── */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
   * {
     box-sizing: border-box;
   }
 
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    background-color: #fbf1c7;
+    color: #3c3836;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }

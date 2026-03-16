@@ -10,6 +10,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGetAssets } from "../../hooks/useAssets";
 import { useGetDepreciationResults } from "../../hooks/useDepreciation";
+import { useGetReportStatus } from "../../hooks/useReports";
+import AppLayout from "@/components/layout/AppLayout";
 
 // Reuse same month labels as DepreciationPage — defined inline (no premature abstraction)
 const MONTH_LABELS: Record<number, string> = {
@@ -53,9 +55,14 @@ export default function DashboardPage() {
     isLoading: deprLoading,
     isError: deprError,
   } = useGetDepreciationResults(periodMonth, periodYear);
+  const {
+    data: reportStatus,
+    isLoading: reportStatusLoading,
+    isError: reportStatusError,
+  } = useGetReportStatus(periodMonth, periodYear);
 
-  const isLoading = assetsLoading || deprLoading;
-  const hasError = assetsError || deprError;
+  const isLoading = assetsLoading || deprLoading || reportStatusLoading;
+  const hasError = assetsError || deprError || reportStatusError;
 
   // Asset summary — active assets only
   const activeAssets = (assets ?? []).filter((a) => a.status === "active");
@@ -69,6 +76,18 @@ export default function DashboardPage() {
   // Depreciation status for selected period
   const isCalculated = (deprResults?.total ?? 0) > 0;
   const calculatedAt = deprResults?.calculated_at ?? null;
+
+  // PDF status for selected period
+  const isPdfGenerated = !!reportStatus?.monthly_summary_generated_at;
+  const pdfGeneratedAt = reportStatus?.monthly_summary_generated_at ?? null;
+
+  // CTA 3-state logic
+  const ctaLabel = !isCalculated
+    ? `Calcular Depreciación — ${MONTH_LABELS[periodMonth]} ${periodYear}`
+    : !isPdfGenerated
+      ? "Generar Reporte PDF"
+      : "Exportar a ZEUS";
+  const ctaPath = !isCalculated ? "/depreciation" : "/reports";
 
   function prevPeriod() {
     if (periodMonth === 1) {
@@ -89,13 +108,10 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fbf1c7]">
-      {/* Page header */}
+    <AppLayout>
+      {/* Period navigator */}
       <div className="border-b border-[#d5c4a1] bg-[#ebdbb2] px-6 py-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-[#3c3836]">SGAF</h1>
-
-          {/* Period navigator */}
+        <div className="flex items-center justify-end">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -142,7 +158,8 @@ export default function DashboardPage() {
             role="alert"
           >
             <p className="text-sm font-medium text-[#9d0006]">
-              Error al cargar el estado del período. Por favor, recarga la página.
+              Error al cargar el estado del período. Por favor, recarga la
+              página.
             </p>
           </div>
         ) : (
@@ -210,24 +227,37 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* PDF report status row */}
+            <div className="rounded-lg border border-[#d5c4a1] bg-[#f2e5bc] px-6 py-4">
+              <div className="flex items-start gap-3">
+                {isPdfGenerated ? (
+                  <span className="mt-0.5 text-lg leading-none text-[#98971a]" aria-hidden="true">✓</span>
+                ) : (
+                  <span className="mt-0.5 text-lg leading-none text-[#d79921]" aria-hidden="true">○</span>
+                )}
+                <p className="text-sm font-medium text-[#3c3836]">
+                  Reporte PDF:{" "}
+                  {isPdfGenerated
+                    ? `Generado — ${formatTimestamp(pdfGeneratedAt!)}`
+                    : "Pendiente"}
+                </p>
+              </div>
+            </div>
+
             {/* Primary CTA */}
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() =>
-                  navigate(isCalculated ? "/reports" : "/depreciation")
-                }
+                onClick={() => navigate(ctaPath)}
                 disabled={isLoading}
                 className="rounded-md bg-[#458588] px-6 py-2 text-sm font-medium text-white hover:bg-[#076678] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isCalculated
-                  ? "Generar Reporte PDF"
-                  : `Calcular Depreciación — ${MONTH_LABELS[periodMonth]} ${periodYear}`}
+                {ctaLabel}
               </button>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </AppLayout>
   );
 }

@@ -186,13 +186,11 @@ describe("tauri.ts — Tauri OS commands", () => {
     });
 
     it("handles save errors gracefully", async () => {
-      vi.mocked(save).mockRejectedValueOnce(
-        new Error("Permission denied")
-      );
+      vi.mocked(save).mockRejectedValueOnce(new Error("Permission denied"));
 
-      await expect(
-        saveFilePicker({ title: "Save file" })
-      ).rejects.toThrow("Permission denied");
+      await expect(saveFilePicker({ title: "Save file" })).rejects.toThrow(
+        "Permission denied",
+      );
     });
   });
 });

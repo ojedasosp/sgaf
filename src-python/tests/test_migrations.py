@@ -40,6 +40,7 @@ def test_first_run_records_all_scripts():
     assert "001_initial_schema.sql" in script_names
     assert "002_seed_config.sql" in script_names
     assert "003_add_logo.sql" in script_names
+    assert "004_pdf_tracking.sql" in script_names
 
 
 def test_idempotent_rerun_does_not_duplicate():
@@ -50,8 +51,8 @@ def test_idempotent_rerun_does_not_duplicate():
     with engine.connect() as conn:
         count = conn.execute(text("SELECT COUNT(*) FROM schema_version")).scalar()
 
-    # 3 migration scripts: 001, 002, 003
-    assert count == 3, f"Expected 3 rows in schema_version, got {count}"
+    # 4 migration scripts: 001, 002, 003, 004
+    assert count == 4, f"Expected 4 rows in schema_version, got {count}"
 
 
 def test_seed_config_inserts_single_row():

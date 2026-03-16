@@ -73,7 +73,13 @@ export function useUpdateAsset() {
   const token = useAppStore((s) => s.token);
 
   return useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: UpdateAssetPayload }) =>
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number;
+      payload: UpdateAssetPayload;
+    }) =>
       apiFetch<{ data: Asset }>(`/assets/${id}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
@@ -96,7 +102,13 @@ export function useRetireAsset() {
   const token = useAppStore((s) => s.token);
 
   return useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: RetireAssetPayload }) =>
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number;
+      payload: RetireAssetPayload;
+    }) =>
       apiFetch<{ data: Asset }>(`/assets/${id}/retire`, {
         method: "POST",
         body: JSON.stringify(payload),

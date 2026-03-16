@@ -219,8 +219,8 @@ describe("App — PrivateRoute and Dashboard routing", () => {
       </QueryClientProvider>,
     );
 
-    // Header with SGAF title is immediately visible
-    expect(screen.getByRole("heading", { name: "SGAF" })).toBeInTheDocument();
+    // SGAF branding is visible in the sidebar (Story 3.5: AppLayout replaces page-level header)
+    expect(screen.getByText("SGAF")).toBeInTheDocument();
     // Period navigator arrows are rendered
     expect(screen.getByLabelText("Mes anterior")).toBeInTheDocument();
     expect(screen.getByLabelText("Mes siguiente")).toBeInTheDocument();

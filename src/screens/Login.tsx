@@ -16,10 +16,13 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      const result = await apiFetch<{ data: { token: string } }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ password }),
-      });
+      const result = await apiFetch<{ data: { token: string } }>(
+        "/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify({ password }),
+        },
+      );
       setToken(result.data.token);
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -38,7 +41,10 @@ export default function Login() {
         </p>
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-foreground">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-foreground"
+            >
               Contraseña
             </label>
             <input

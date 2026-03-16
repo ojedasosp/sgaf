@@ -21,3 +21,10 @@ pub fn get_backend_status(app: AppHandle) -> Result<BackendState, String> {
         .map(|state| state.0.lock().unwrap().clone())
         .ok_or_else(|| "Backend status not available".to_string())
 }
+
+/// Writes binary content to a file path. Used for PDF/CSV export.
+/// Returns error string if write fails.
+#[tauri::command]
+pub fn write_binary_file(path: String, content: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, &content).map_err(|e| format!("Failed to write file: {}", e))
+}

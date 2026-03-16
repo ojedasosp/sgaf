@@ -45,13 +45,13 @@ function mockFetchResponse(body: unknown, status = 200) {
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
-    })
+    }),
   );
 }
 
 function mockFetchError() {
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-    new Error("Network error")
+    new Error("Network error"),
   );
 }
 
@@ -112,11 +112,14 @@ function renderAssetDetail(assetId = 1) {
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[`/assets/${assetId}`]}>
           <Routes>
-            <Route path="/assets" element={<div data-testid="asset-list">Asset List</div>} />
+            <Route
+              path="/assets"
+              element={<div data-testid="asset-list">Asset List</div>}
+            />
             <Route path="/assets/:id" element={<AssetDetail />} />
           </Routes>
         </MemoryRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     ),
   };
 }
@@ -164,9 +167,13 @@ describe("AssetDetail — view mode", () => {
     mockAssetAndAudit(asset);
     renderAssetDetail();
 
-    await waitFor(() => expect(screen.getAllByText("LAP-001").length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText("LAP-001").length).toBeGreaterThan(0),
+    );
     // description appears in header and in profile section
-    expect(screen.getAllByText("HP Laptop 14 pulgadas").length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByText("HP Laptop 14 pulgadas").length,
+    ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Equipos de Cómputo")).toBeInTheDocument();
     expect(screen.getByText("60 meses")).toBeInTheDocument();
     // Date displayed as dd/mm/yyyy
@@ -179,7 +186,9 @@ describe("AssetDetail — view mode", () => {
     mockAssetAndAudit(makeAsset());
     renderAssetDetail();
 
-    await waitFor(() => expect(screen.getAllByText("LAP-001").length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText("LAP-001").length).toBeGreaterThan(0),
+    );
     expect(screen.getByText("1200.0000")).toBeInTheDocument();
     expect(screen.getByText("120.0000")).toBeInTheDocument();
   });
@@ -242,7 +251,7 @@ describe("AssetDetail — audit history (AC5)", () => {
     renderAssetDetail();
 
     await waitFor(() =>
-      screen.getByText("Aún no hay cambios registrados para este activo.")
+      screen.getByText("Aún no hay cambios registrados para este activo."),
     );
   });
 
@@ -291,7 +300,14 @@ describe("AssetDetail — audit history (AC5)", () => {
   });
 
   it("renders — for null field/values in CREATE entry", async () => {
-    const entries = [makeAuditEntry({ action: "CREATE", field: null, old_value: null, new_value: null })];
+    const entries = [
+      makeAuditEntry({
+        action: "CREATE",
+        field: null,
+        old_value: null,
+        new_value: null,
+      }),
+    ];
     mockAssetAndAudit(makeAsset(), entries);
     renderAssetDetail();
 
@@ -318,10 +334,12 @@ describe("AssetDetail — edit mode (AC2, AC3)", () => {
     // Edit form is shown
     expect(screen.getByText("Editar Activo")).toBeInTheDocument();
     // Fields pre-populated
-    expect((screen.getByLabelText(/Código/i) as HTMLInputElement).value).toBe("LAP-001");
-    expect((screen.getByLabelText(/Descripción/i) as HTMLInputElement).value).toBe(
-      "HP Laptop 14 pulgadas"
+    expect((screen.getByLabelText(/Código/i) as HTMLInputElement).value).toBe(
+      "LAP-001",
     );
+    expect(
+      (screen.getByLabelText(/Descripción/i) as HTMLInputElement).value,
+    ).toBe("HP Laptop 14 pulgadas");
   });
 
   it('"Cancelar" reverts to view mode without saving (AC2)', async () => {
@@ -356,7 +374,7 @@ describe("AssetDetail — edit mode (AC2, AC3)", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(window.confirm).toHaveBeenCalledWith(
-      "¿Descartar cambios? Los datos ingresados se perderán."
+      "¿Descartar cambios? Los datos ingresados se perderán.",
     );
     expect(screen.getByText("Editar Activo")).toBeInTheDocument();
   });
@@ -401,10 +419,12 @@ describe("AssetDetail — edit mode (AC2, AC3)", () => {
     mockFetchResponse({ data: updatedAsset }); // refetch asset
     mockFetchResponse({ data: [], total: 0 }); // refetch audit
 
-    await userEvent.click(screen.getByRole("button", { name: "Guardar Cambios" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar Cambios" }),
+    );
 
     await waitFor(() =>
-      expect(screen.queryByText("Editar Activo")).not.toBeInTheDocument()
+      expect(screen.queryByText("Editar Activo")).not.toBeInTheDocument(),
     );
   });
 
@@ -419,10 +439,12 @@ describe("AssetDetail — edit mode (AC2, AC3)", () => {
     // Clear code field and submit
     const codeInput = screen.getByLabelText(/Código/i);
     await userEvent.clear(codeInput);
-    await userEvent.click(screen.getByRole("button", { name: "Guardar Cambios" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar Cambios" }),
+    );
 
     await waitFor(() =>
-      screen.getByText("El código del activo es obligatorio")
+      screen.getByText("El código del activo es obligatorio"),
     );
   });
 });
@@ -437,15 +459,21 @@ describe("AssetDetail — retire flow (AC1, AC3, AC7)", () => {
     renderAssetDetail();
 
     await waitFor(() => screen.getAllByText("LAP-001").length > 0);
-    expect(screen.getByRole("button", { name: "Dar de Baja" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Dar de Baja" }),
+    ).toBeInTheDocument();
   });
 
   it('"Dar de Baja" button is NOT visible for retired asset (AC3)', async () => {
-    mockAssetAndAudit(makeAsset({ status: "retired", retirement_date: "2026-03-15" }));
+    mockAssetAndAudit(
+      makeAsset({ status: "retired", retirement_date: "2026-03-15" }),
+    );
     renderAssetDetail();
 
     await waitFor(() => screen.getByText("Retirado"));
-    expect(screen.queryByRole("button", { name: "Dar de Baja" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Dar de Baja" }),
+    ).not.toBeInTheDocument();
   });
 
   it("clicking Dar de Baja shows retire form with date input and action buttons", async () => {
@@ -457,8 +485,12 @@ describe("AssetDetail — retire flow (AC1, AC3, AC7)", () => {
 
     expect(screen.getByText("Dar de Baja al Activo")).toBeInTheDocument();
     expect(screen.getByLabelText(/Fecha de Baja/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirmar Baja" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirmar Baja" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancelar" }),
+    ).toBeInTheDocument();
   });
 
   it('"Cancelar" in retire mode hides form without API call', async () => {
@@ -497,10 +529,14 @@ describe("AssetDetail — retire flow (AC1, AC3, AC7)", () => {
     mockFetchResponse({ data: retiredAsset }); // refetch asset
     mockFetchResponse({ data: [], total: 0 }); // refetch audit
 
-    await userEvent.click(screen.getByRole("button", { name: "Confirmar Baja" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirmar Baja" }),
+    );
 
     await waitFor(() =>
-      expect(screen.queryByText("Dar de Baja al Activo")).not.toBeInTheDocument()
+      expect(
+        screen.queryByText("Dar de Baja al Activo"),
+      ).not.toBeInTheDocument(),
     );
   });
 
@@ -515,20 +551,23 @@ describe("AssetDetail — retire flow (AC1, AC3, AC7)", () => {
     mockFetchResponse(
       {
         error: "CONFLICT",
-        message: "El activo tiene un evento de mantenimiento abierto. Ciérralo antes de dar de baja.",
+        message:
+          "El activo tiene un evento de mantenimiento abierto. Ciérralo antes de dar de baja.",
       },
-      409
+      409,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Confirmar Baja" }));
-
-    await waitFor(() =>
-      screen.getByText(/Ciérralo antes de dar de baja/)
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirmar Baja" }),
     );
+
+    await waitFor(() => screen.getByText(/Ciérralo antes de dar de baja/));
   });
 
   it('"Fecha de Baja" row shown in Estado section for retired asset (AC7)', async () => {
-    mockAssetAndAudit(makeAsset({ status: "retired", retirement_date: "2026-03-15" }));
+    mockAssetAndAudit(
+      makeAsset({ status: "retired", retirement_date: "2026-03-15" }),
+    );
     renderAssetDetail();
 
     await waitFor(() => screen.getByText("Retirado"));
@@ -579,9 +618,17 @@ describe("AssetDetail — delete flow (AC5, AC6, AC8)", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
 
-    expect(screen.getByText("¿Confirmas eliminar este activo? Esta acción no se puede deshacer.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sí, eliminar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "¿Confirmas eliminar este activo? Esta acción no se puede deshacer.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sí, eliminar" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancelar" }),
+    ).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -592,15 +639,25 @@ describe("AssetDetail — delete flow (AC5, AC6, AC8)", () => {
     await waitFor(() => screen.getAllByText("LAP-001").length > 0);
 
     await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
-    expect(screen.getByText("¿Confirmas eliminar este activo? Esta acción no se puede deshacer.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "¿Confirmas eliminar este activo? Esta acción no se puede deshacer.",
+      ),
+    ).toBeInTheDocument();
 
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     fetchMock.mockClear();
 
     await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
 
-    expect(screen.queryByText("¿Confirmas eliminar este activo? Esta acción no se puede deshacer.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Eliminar" })).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "¿Confirmas eliminar este activo? Esta acción no se puede deshacer.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Eliminar" }),
+    ).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -614,7 +671,7 @@ describe("AssetDetail — delete flow (AC5, AC6, AC8)", () => {
 
     // Mock 204 response (empty body)
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(null, { status: 204 })
+      new Response(null, { status: 204 }),
     );
     mockFetchResponse({ data: [], total: 0 }); // refetch assets list after invalidation
 
@@ -634,23 +691,26 @@ describe("AssetDetail — delete flow (AC5, AC6, AC8)", () => {
     mockFetchResponse(
       {
         error: "CONFLICT",
-        message: "No se puede eliminar el activo porque tiene historial asociado.",
+        message:
+          "No se puede eliminar el activo porque tiene historial asociado.",
       },
-      409
+      409,
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Sí, eliminar" }));
 
-    await waitFor(() =>
-      screen.getByText(/No se puede eliminar el activo/)
-    );
+    await waitFor(() => screen.getByText(/No se puede eliminar el activo/));
   });
 
   it('"Eliminar" button NOT visible for retired asset', async () => {
-    mockAssetAndAudit(makeAsset({ status: "retired", retirement_date: "2026-03-15" }));
+    mockAssetAndAudit(
+      makeAsset({ status: "retired", retirement_date: "2026-03-15" }),
+    );
     renderAssetDetail();
 
     await waitFor(() => screen.getByText("Retirado"));
-    expect(screen.queryByRole("button", { name: "Eliminar" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Eliminar" }),
+    ).not.toBeInTheDocument();
   });
 });

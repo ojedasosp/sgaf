@@ -40,7 +40,9 @@ export default function SetupWizard() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [setupComplete, setSetupComplete] = useState(false);
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     return () => {
@@ -116,11 +118,16 @@ export default function SetupWizard() {
       });
       setSetupComplete(true);
       // Brief confirmation before navigating to login
-      redirectTimerRef.current = setTimeout(() => navigate("/login", { replace: true }), 1500);
+      redirectTimerRef.current = setTimeout(
+        () => navigate("/login", { replace: true }),
+        1500,
+      );
     } catch (err) {
       setErrors({
         submit:
-          err instanceof Error ? err.message : "Setup failed. Please try again.",
+          err instanceof Error
+            ? err.message
+            : "Setup failed. Please try again.",
       });
     } finally {
       setIsSubmitting(false);

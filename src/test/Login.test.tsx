@@ -25,12 +25,14 @@ function mockFetchResponse(body: unknown, status = 200) {
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
-    })
+    }),
   );
 }
 
 function mockFetchError(message: string) {
-  (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error(message));
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    new Error(message),
+  );
 }
 
 /** Render Login inside a MemoryRouter; a /dashboard route acts as post-login destination. */
@@ -41,7 +43,7 @@ function renderLogin() {
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<div>Dashboard Page</div>} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -54,12 +56,16 @@ describe("Login screen — form rendering", () => {
   it("renders password field", () => {
     renderLogin();
     expect(screen.getByLabelText(/contraseña/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/ingresa tu contraseña/i)).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(/ingresa tu contraseña/i),
+    ).toBeInTheDocument();
   });
 
   it("renders Ingresar button", () => {
     renderLogin();
-    expect(screen.getByRole("button", { name: /ingresar/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /ingresar/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders SGAF title", () => {
@@ -100,7 +106,10 @@ describe("Login screen — successful login", () => {
     renderLogin();
 
     await act(async () => {
-      await userEvent.type(screen.getByLabelText(/contraseña/i), "correctpassword");
+      await userEvent.type(
+        screen.getByLabelText(/contraseña/i),
+        "correctpassword",
+      );
       await userEvent.click(screen.getByRole("button", { name: /ingresar/i }));
     });
 
@@ -120,7 +129,8 @@ describe("Login screen — successful login", () => {
       await userEvent.click(screen.getByRole("button", { name: /ingresar/i }));
     });
 
-    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     expect(fetchCall[0]).toContain("/auth/login");
     const requestBody = JSON.parse(fetchCall[1].body as string);
     expect(requestBody.password).toBe("mysecret");
@@ -132,7 +142,7 @@ describe("Login screen — successful login", () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValueOnce(
       new Promise<Response>((resolve) => {
         resolvePromise = resolve;
-      })
+      }),
     );
 
     renderLogin();
@@ -145,7 +155,9 @@ describe("Login screen — successful login", () => {
     });
 
     // Button should show loading text
-    expect(await screen.findByRole("button", { name: /verificando/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /verificando/i }),
+    ).toBeInTheDocument();
 
     // Resolve the fetch
     await act(async () => {
@@ -153,7 +165,7 @@ describe("Login screen — successful login", () => {
         new Response(JSON.stringify({ data: { token: "tok" } }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
-        })
+        }),
       );
     });
   });
@@ -166,7 +178,10 @@ describe("Login screen — failed login", () => {
   });
 
   it("shows inline error on wrong password (401)", async () => {
-    mockFetchResponse({ error: "UNAUTHORIZED", message: "Invalid credentials" }, 401);
+    mockFetchResponse(
+      { error: "UNAUTHORIZED", message: "Invalid credentials" },
+      401,
+    );
 
     renderLogin();
 
@@ -198,7 +213,10 @@ describe("Login screen — failed login", () => {
   });
 
   it("does not navigate on error", async () => {
-    mockFetchResponse({ error: "UNAUTHORIZED", message: "Invalid credentials" }, 401);
+    mockFetchResponse(
+      { error: "UNAUTHORIZED", message: "Invalid credentials" },
+      401,
+    );
 
     renderLogin();
 
@@ -208,12 +226,17 @@ describe("Login screen — failed login", () => {
     });
 
     // Still on login page
-    expect(screen.getByRole("button", { name: /ingresar/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /ingresar/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Dashboard Page")).not.toBeInTheDocument();
   });
 
   it("button is re-enabled after failed login", async () => {
-    mockFetchResponse({ error: "UNAUTHORIZED", message: "Invalid credentials" }, 401);
+    mockFetchResponse(
+      { error: "UNAUTHORIZED", message: "Invalid credentials" },
+      401,
+    );
 
     renderLogin();
 
@@ -222,12 +245,17 @@ describe("Login screen — failed login", () => {
       await userEvent.click(screen.getByRole("button", { name: /ingresar/i }));
     });
 
-    expect(screen.getByRole("button", { name: /ingresar/i })).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /ingresar/i }),
+    ).not.toBeDisabled();
   });
 
   it("clears previous error on new submit attempt", async () => {
     // First attempt: wrong password
-    mockFetchResponse({ error: "UNAUTHORIZED", message: "Invalid credentials" }, 401);
+    mockFetchResponse(
+      { error: "UNAUTHORIZED", message: "Invalid credentials" },
+      401,
+    );
     renderLogin();
 
     await act(async () => {

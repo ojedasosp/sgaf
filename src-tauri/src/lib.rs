@@ -37,7 +37,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![commands::get_app_data_path, commands::get_backend_status])
+        .invoke_handler(tauri::generate_handler![commands::get_app_data_path, commands::get_backend_status, commands::write_binary_file])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

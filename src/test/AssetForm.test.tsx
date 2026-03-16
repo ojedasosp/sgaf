@@ -36,7 +36,7 @@ function mockFetchResponse(body: unknown, status = 200) {
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
-    })
+    }),
   );
 }
 
@@ -64,7 +64,7 @@ function renderAssetForm() {
           <Route path="/dashboard" element={<div>Dashboard Page</div>} />
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -77,7 +77,10 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/código/i), "LAP-001");
 
   await user.clear(screen.getByLabelText(/descripción/i));
-  await user.type(screen.getByLabelText(/descripción/i), "HP Laptop 14 pulgadas");
+  await user.type(
+    screen.getByLabelText(/descripción/i),
+    "HP Laptop 14 pulgadas",
+  );
 
   await user.clear(screen.getByLabelText(/categoría/i));
   await user.type(screen.getByLabelText(/categoría/i), "Equipos de Cómputo");
@@ -158,7 +161,9 @@ describe("AssetForm — rendering", () => {
 
   it("renders the Método de Depreciación select", () => {
     renderAssetForm();
-    expect(screen.getByLabelText(/método de depreciación/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/método de depreciación/i),
+    ).toBeInTheDocument();
   });
 
   it("depreciation select has all three options (AC5)", () => {
@@ -171,7 +176,7 @@ describe("AssetForm — rendering", () => {
   it("renders the submit button", () => {
     renderAssetForm();
     expect(
-      screen.getByRole("button", { name: /registrar activo/i })
+      screen.getByRole("button", { name: /registrar activo/i }),
     ).toBeInTheDocument();
   });
 
@@ -205,7 +210,9 @@ describe("AssetForm — inline validation on blur (AC2)", () => {
     await user.click(codeInput);
     await user.tab(); // trigger blur
 
-    expect(await screen.findByText(/código del activo es obligatorio/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/código del activo es obligatorio/i),
+    ).toBeInTheDocument();
   });
 
   it("shows error for empty Descripción after blur", async () => {
@@ -215,7 +222,9 @@ describe("AssetForm — inline validation on blur (AC2)", () => {
     await user.click(screen.getByLabelText(/descripción/i));
     await user.tab();
 
-    expect(await screen.findByText(/descripción es obligatoria/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/descripción es obligatoria/i),
+    ).toBeInTheDocument();
   });
 
   it("shows error for historical_cost = 0 after blur", async () => {
@@ -227,7 +236,7 @@ describe("AssetForm — inline validation on blur (AC2)", () => {
     await user.tab();
 
     expect(
-      await screen.findByText(/costo histórico debe ser mayor a 0/i)
+      await screen.findByText(/costo histórico debe ser mayor a 0/i),
     ).toBeInTheDocument();
   });
 
@@ -242,7 +251,9 @@ describe("AssetForm — inline validation on blur (AC2)", () => {
     await user.tab();
 
     expect(
-      await screen.findByText(/valor residual debe ser menor al costo histórico/i)
+      await screen.findByText(
+        /valor residual debe ser menor al costo histórico/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -254,7 +265,7 @@ describe("AssetForm — inline validation on blur (AC2)", () => {
     await user.tab();
 
     expect(
-      await screen.findByText(/valor residual debe ser cero o mayor/i)
+      await screen.findByText(/valor residual debe ser cero o mayor/i),
     ).toBeInTheDocument();
   });
 
@@ -267,7 +278,7 @@ describe("AssetForm — inline validation on blur (AC2)", () => {
     await user.tab();
 
     expect(
-      await screen.findByText(/vida útil debe ser mayor a 0/i)
+      await screen.findByText(/vida útil debe ser mayor a 0/i),
     ).toBeInTheDocument();
   });
 
@@ -325,14 +336,17 @@ describe("AssetForm — successful submission (AC3)", () => {
     await fillValidForm(user);
 
     await act(async () => {
-      await user.click(screen.getByRole("button", { name: /registrar activo/i }));
+      await user.click(
+        screen.getByRole("button", { name: /registrar activo/i }),
+      );
     });
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalled();
     });
 
-    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     expect(fetchCall[0]).toContain("/assets/");
     expect(fetchCall[1].method).toBe("POST");
     const body = JSON.parse(fetchCall[1].body as string);
@@ -365,7 +379,9 @@ describe("AssetForm — successful submission (AC3)", () => {
     await fillValidForm(user);
 
     await act(async () => {
-      await user.click(screen.getByRole("button", { name: /registrar activo/i }));
+      await user.click(
+        screen.getByRole("button", { name: /registrar activo/i }),
+      );
     });
 
     expect(await screen.findByText("Asset Detail Page")).toBeInTheDocument();
@@ -395,14 +411,17 @@ describe("AssetForm — successful submission (AC3)", () => {
     await fillValidForm(user);
 
     await act(async () => {
-      await user.click(screen.getByRole("button", { name: /registrar activo/i }));
+      await user.click(
+        screen.getByRole("button", { name: /registrar activo/i }),
+      );
     });
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalled();
     });
 
-    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     expect(fetchCall[1].headers["Authorization"]).toBe("Bearer test-token");
   });
 });
@@ -423,8 +442,12 @@ describe("AssetForm — API error handling", () => {
 
   it("shows error message on 409 duplicate code without losing form data", async () => {
     mockFetchResponse(
-      { error: "CONFLICT", message: "Asset code 'LAP-001' already exists", field: "code" },
-      409
+      {
+        error: "CONFLICT",
+        message: "Asset code 'LAP-001' already exists",
+        field: "code",
+      },
+      409,
     );
 
     const user = userEvent.setup();
@@ -432,13 +455,13 @@ describe("AssetForm — API error handling", () => {
     await fillValidForm(user);
 
     await act(async () => {
-      await user.click(screen.getByRole("button", { name: /registrar activo/i }));
+      await user.click(
+        screen.getByRole("button", { name: /registrar activo/i }),
+      );
     });
 
     // Error message displayed INLINE on the code field (H1 fix — Subtask 9.8)
-    expect(
-      await screen.findByRole("alert")
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getByText(/already exists/i)).toBeInTheDocument();
 
     // Form data preserved (code field still has value)
@@ -449,17 +472,16 @@ describe("AssetForm — API error handling", () => {
   });
 
   it("does not navigate on API error", async () => {
-    mockFetchResponse(
-      { error: "CONFLICT", message: "Already exists" },
-      409
-    );
+    mockFetchResponse({ error: "CONFLICT", message: "Already exists" }, 409);
 
     const user = userEvent.setup();
     renderAssetForm();
     await fillValidForm(user);
 
     await act(async () => {
-      await user.click(screen.getByRole("button", { name: /registrar activo/i }));
+      await user.click(
+        screen.getByRole("button", { name: /registrar activo/i }),
+      );
     });
 
     await waitFor(() => {
@@ -470,7 +492,7 @@ describe("AssetForm — API error handling", () => {
   it("shows generic submit error when backend error has no field", async () => {
     mockFetchResponse(
       { error: "INTERNAL_ERROR", message: "Something went wrong" },
-      500
+      500,
     );
 
     const user = userEvent.setup();
@@ -478,11 +500,15 @@ describe("AssetForm — API error handling", () => {
     await fillValidForm(user);
 
     await act(async () => {
-      await user.click(screen.getByRole("button", { name: /registrar activo/i }));
+      await user.click(
+        screen.getByRole("button", { name: /registrar activo/i }),
+      );
     });
 
     // Generic error shown (no field to map to)
-    expect(await screen.findByText(/something went wrong/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/something went wrong/i),
+    ).toBeInTheDocument();
   });
 
   it("button is re-enabled after API error", async () => {
@@ -493,12 +519,14 @@ describe("AssetForm — API error handling", () => {
     await fillValidForm(user);
 
     await act(async () => {
-      await user.click(screen.getByRole("button", { name: /registrar activo/i }));
+      await user.click(
+        screen.getByRole("button", { name: /registrar activo/i }),
+      );
     });
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: /registrar activo/i })
+        screen.getByRole("button", { name: /registrar activo/i }),
       ).not.toBeDisabled();
     });
   });

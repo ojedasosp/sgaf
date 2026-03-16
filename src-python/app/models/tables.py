@@ -28,6 +28,9 @@ app_config = Table(
     Column("logo_path", Text),  # nullable — set during first-launch wizard (Story 1.3)
     Column("created_at", Text, nullable=False),
     Column("updated_at", Text, nullable=False),
+    Column("last_monthly_pdf_generated_at", Text, nullable=True),
+    Column("last_monthly_pdf_period_month", Integer, nullable=True),
+    Column("last_monthly_pdf_period_year", Integer, nullable=True),
 )
 
 fixed_assets = Table(

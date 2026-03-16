@@ -11,9 +11,7 @@ export default function ErrorMessage({ message, hint }: ErrorMessageProps) {
           Error al iniciar SGAF
         </h2>
         <p className="text-sm text-muted-foreground">{message}</p>
-        {hint && (
-          <p className="mt-3 text-xs text-muted-foreground">{hint}</p>
-        )}
+        {hint && <p className="mt-3 text-xs text-muted-foreground">{hint}</p>}
       </div>
     </div>
   );

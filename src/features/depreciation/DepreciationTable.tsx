@@ -55,7 +55,8 @@ export default function DepreciationTable({ rows }: DepreciationTableProps) {
               <TableCell>{row.code}</TableCell>
               <TableCell>{row.description}</TableCell>
               <TableCell>
-                {METHOD_LABELS[row.depreciation_method] ?? row.depreciation_method}
+                {METHOD_LABELS[row.depreciation_method] ??
+                  row.depreciation_method}
               </TableCell>
               <TableCell className="text-right font-[IBM_Plex_Mono,monospace]">
                 {row.opening_book_value}

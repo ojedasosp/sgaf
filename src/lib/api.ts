@@ -6,7 +6,12 @@ export class ApiError extends Error {
   field?: string;
   errorCode?: string;
 
-  constructor(message: string, status: number, field?: string, errorCode?: string) {
+  constructor(
+    message: string,
+    status: number,
+    field?: string,
+    errorCode?: string,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -33,7 +38,7 @@ interface FetchOptions extends RequestInit {
 /// All Flask business calls go through here, never through Tauri invoke().
 export async function apiFetch<T>(
   path: string,
-  options: FetchOptions = {}
+  options: FetchOptions = {},
 ): Promise<T> {
   const { token, ...fetchOptions } = options;
 
@@ -82,7 +87,7 @@ export async function apiFetch<T>(
   const contentType = response.headers.get("content-type");
   if (!contentType?.includes("application/json")) {
     throw new Error(
-      `Expected JSON response, got ${contentType ?? "unknown content-type"}`
+      `Expected JSON response, got ${contentType ?? "unknown content-type"}`,
     );
   }
 
@@ -94,15 +99,18 @@ export async function apiFetch<T>(
 export async function triggerDepreciation(
   periodMonth: number,
   periodYear: number,
-  token: string
+  token: string,
 ): Promise<import("../types/depreciation").DepreciationResponse> {
   return apiFetch<import("../types/depreciation").DepreciationResponse>(
     "/depreciation/",
     {
       method: "POST",
-      body: JSON.stringify({ period_month: periodMonth, period_year: periodYear }),
+      body: JSON.stringify({
+        period_month: periodMonth,
+        period_year: periodYear,
+      }),
       token,
-    }
+    },
   );
 }
 
@@ -111,22 +119,71 @@ export async function triggerDepreciation(
 export async function getDepreciationResults(
   periodMonth: number,
   periodYear: number,
-  token: string
+  token: string,
 ): Promise<import("../types/depreciation").DepreciationResponse> {
   return apiFetch<import("../types/depreciation").DepreciationResponse>(
     `/depreciation/?period_month=${periodMonth}&period_year=${periodYear}`,
-    { token }
+    { token },
   );
+}
+
+/// Generate a NIIF PDF report. Returns PDF bytes as a Blob.
+/// Note: Cannot use apiFetch() — it always calls response.json().
+/// Uses raw fetch with Authorization header from token.
+export async function generatePdfReport(
+  params: {
+    report_type: "per_asset" | "monthly_summary" | "asset_register";
+    asset_id?: number;
+    period_month?: number;
+    period_year?: number;
+  },
+  token: string,
+): Promise<Blob> {
+  const response = await fetch(`${getBaseUrl()}/reports/generate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    // Mirror apiFetch's global 401 handler: clear stale token so PrivateRoute redirects
+    if (response.status === 401 && token) {
+      const { useAppStore } = await import("../store/appStore");
+      useAppStore.getState().clearToken();
+    }
+    let message = `Request failed: ${response.status}`;
+    try {
+      const err = await response.json();
+      message = err.message ?? err.error ?? message;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(message, response.status);
+  }
+  return response.blob();
+}
+
+/// GET /api/v1/reports/status — PDF generation status for a period.
+export async function getReportStatus(
+  periodMonth: number,
+  periodYear: number,
+  token: string,
+): Promise<{ monthly_summary_generated_at: string | null }> {
+  return apiFetch<{ data: { monthly_summary_generated_at: string | null } }>(
+    `/reports/status?period_month=${periodMonth}&period_year=${periodYear}`,
+    { token },
+  ).then((res) => res.data);
 }
 
 /// Retrieve all depreciation results for a specific asset across all calculated periods.
 /// GET /api/v1/depreciation/assets/{assetId}
 export async function getAssetDepreciationHistory(
   assetId: number,
-  token: string
+  token: string,
 ): Promise<import("../types/depreciation").AssetDepreciationHistoryResponse> {
-  return apiFetch<import("../types/depreciation").AssetDepreciationHistoryResponse>(
-    `/depreciation/assets/${assetId}`,
-    { token }
-  );
+  return apiFetch<
+    import("../types/depreciation").AssetDepreciationHistoryResponse
+  >(`/depreciation/assets/${assetId}`, { token });
 }

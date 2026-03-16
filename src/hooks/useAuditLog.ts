@@ -17,7 +17,7 @@ export function useGetAssetAuditLog(assetId: number) {
     queryFn: () =>
       apiFetch<{ data: AuditLogEntry[]; total: number }>(
         `/audit/?entity_type=asset&entity_id=${assetId}`,
-        { token: token ?? undefined }
+        { token: token ?? undefined },
       ),
     select: (response) => response.data,
   });

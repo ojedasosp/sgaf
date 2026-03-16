@@ -10,6 +10,7 @@ import AssetDetail from "./features/assets/AssetDetail";
 import AssetForm from "./features/assets/AssetForm";
 import AssetList from "./features/assets/AssetList";
 import DepreciationPage from "./features/depreciation/DepreciationPage";
+import ReportsPage from "./features/reports/ReportsPage";
 import Dashboard from "./screens/Dashboard";
 import Login from "./screens/Login";
 import SetupWizard from "./screens/SetupWizard";
@@ -42,7 +43,9 @@ function App() {
 
     // Poll backend status in case the event fired before this listener registered.
     // This handles the race condition where the sidecar starts faster than React mounts.
-    invoke<{ Loading?: null; Ready?: number; Error?: string }>("get_backend_status")
+    invoke<{ Loading?: null; Ready?: number; Error?: string }>(
+      "get_backend_status",
+    )
       .then((state) => {
         if ("Ready" in state && state.Ready != null) {
           setApiPort(state.Ready);
@@ -133,6 +136,14 @@ function App() {
         element={
           <PrivateRoute>
             <DepreciationPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <PrivateRoute>
+            <ReportsPage />
           </PrivateRoute>
         }
       />

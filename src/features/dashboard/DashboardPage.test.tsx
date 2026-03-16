@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -56,17 +56,33 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
 
 const EMPTY_ASSETS = { data: [], total: 0 };
 const EMPTY_DEPR = { data: [], total: 0, period_month: 3, period_year: 2026 };
+const EMPTY_REPORT_STATUS = { data: { monthly_summary_generated_at: null } };
+const PDF_GENERATED_STATUS = {
+  data: { monthly_summary_generated_at: "2026-03-10T10:00:00Z" },
+};
 
 // ---------------------------------------------------------------------------
 // Fetch helper — URL-aware so parallel calls resolve independently
 // ---------------------------------------------------------------------------
 
-function setupFetchMocks(assetsBody: unknown, deprBody: unknown) {
+function setupFetchMocks(
+  assetsBody: unknown,
+  deprBody: unknown,
+  reportStatusBody: unknown = EMPTY_REPORT_STATUS,
+) {
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
     (url: string) => {
       if (url.includes("/assets/")) {
         return Promise.resolve(
           new Response(JSON.stringify(assetsBody), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/reports/status")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(reportStatusBody), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),
@@ -91,10 +107,17 @@ function setupFetchMocks(assetsBody: unknown, deprBody: unknown) {
 // Render helper
 // ---------------------------------------------------------------------------
 
+let activeQueryClient: QueryClient | null = null;
+
 function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  const qc = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
   });
+  activeQueryClient = qc;
+  return qc;
 }
 
 function renderDashboard() {
@@ -138,6 +161,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+  activeQueryClient?.clear();
+  activeQueryClient = null;
   vi.useRealTimers();
   vi.restoreAllMocks();
   useAppStore.getState().clearToken();
@@ -234,7 +260,7 @@ describe("DashboardPage — CTA when calculated (AC4)", () => {
       period_year: 2026,
       calculated_at: "2026-03-05T14:23:00Z",
     };
-    setupFetchMocks(EMPTY_ASSETS, deprWithResults);
+    setupFetchMocks(EMPTY_ASSETS, deprWithResults, EMPTY_REPORT_STATUS);
     renderDashboard();
 
     await waitFor(() => {
@@ -320,6 +346,14 @@ describe("DashboardPage — error handling", () => {
             }),
           );
         }
+        if (url.includes("/reports/status")) {
+          return Promise.resolve(
+            new Response(JSON.stringify(EMPTY_REPORT_STATUS), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
         if (url.includes("/depreciation/")) {
           return Promise.reject(new Error("Depreciation service error"));
         }
@@ -333,6 +367,51 @@ describe("DashboardPage — error handling", () => {
         screen.getByText(
           /Error al cargar el estado del período.*Por favor, recarga/i,
         ),
+      ).toBeInTheDocument();
+    });
+  });
+});
+
+describe("DashboardPage — PDF status row (AC7)", () => {
+  it("shows 'Reporte PDF: Pendiente' when no PDF has been generated", async () => {
+    setupFetchMocks(EMPTY_ASSETS, EMPTY_DEPR, EMPTY_REPORT_STATUS);
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Reporte PDF:.*Pendiente/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows 'Reporte PDF: Generado —' when PDF has been generated", async () => {
+    const deprWithResults = {
+      data: [{ result_id: 1, asset_id: 1 }],
+      total: 1,
+      period_month: 3,
+      period_year: 2026,
+      calculated_at: "2026-03-05T14:23:00Z",
+    };
+    setupFetchMocks(EMPTY_ASSETS, deprWithResults, PDF_GENERATED_STATUS);
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Reporte PDF:.*Generado —/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows 'Exportar a ZEUS' CTA when depreciation calculated AND PDF generated", async () => {
+    const deprWithResults = {
+      data: [{ result_id: 1, asset_id: 1 }],
+      total: 1,
+      period_month: 3,
+      period_year: 2026,
+      calculated_at: "2026-03-05T14:23:00Z",
+    };
+    setupFetchMocks(EMPTY_ASSETS, deprWithResults, PDF_GENERATED_STATUS);
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Exportar a ZEUS" }),
       ).toBeInTheDocument();
     });
   });

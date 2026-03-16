@@ -54,7 +54,11 @@ function ScheduleSkeleton() {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function AssetDepreciationSchedule({ assetId }: { assetId: number }) {
+export default function AssetDepreciationSchedule({
+  assetId,
+}: {
+  assetId: number;
+}) {
   const { data, isLoading, isError } = useGetAssetDepreciationHistory(assetId);
 
   if (isLoading) {
@@ -64,7 +68,9 @@ export default function AssetDepreciationSchedule({ assetId }: { assetId: number
   if (isError) {
     return (
       <div className="px-6 py-6 text-center">
-        <p className="text-sm text-[#cc241d]">No se pudo cargar la tabla de depreciación.</p>
+        <p className="text-sm text-[#cc241d]">
+          No se pudo cargar la tabla de depreciación.
+        </p>
       </div>
     );
   }
@@ -84,13 +90,21 @@ export default function AssetDepreciationSchedule({ assetId }: { assetId: number
       <table className="w-full text-sm">
         <thead className="bg-[#ebdbb2]">
           <tr>
-            <th className="px-4 py-3 text-left font-medium text-[#665c54]">Período</th>
+            <th className="px-4 py-3 text-left font-medium text-[#665c54]">
+              Período
+            </th>
             <th className="px-4 py-3 text-right font-medium text-[#665c54]">
               Valor Libro Apertura
             </th>
-            <th className="px-4 py-3 text-right font-medium text-[#665c54]">Cargo Mensual</th>
-            <th className="px-4 py-3 text-right font-medium text-[#665c54]">Dep. Acumulada</th>
-            <th className="px-4 py-3 text-right font-medium text-[#665c54]">Valor Libro Neto</th>
+            <th className="px-4 py-3 text-right font-medium text-[#665c54]">
+              Cargo Mensual
+            </th>
+            <th className="px-4 py-3 text-right font-medium text-[#665c54]">
+              Dep. Acumulada
+            </th>
+            <th className="px-4 py-3 text-right font-medium text-[#665c54]">
+              Valor Libro Neto
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#d5c4a1]">

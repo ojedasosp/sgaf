@@ -47,13 +47,13 @@ function mockFetchResponse(body: unknown, status = 200) {
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
-    })
+    }),
   );
 }
 
 function mockFetchError() {
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-    new Error("Network error")
+    new Error("Network error"),
   );
 }
 
@@ -80,9 +80,27 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
   };
 }
 
-const ASSET_1 = makeAsset({ asset_id: 1, code: "LAP-001", description: "HP Laptop", category: "Equipos de Cómputo", status: "active" });
-const ASSET_2 = makeAsset({ asset_id: 2, code: "MON-001", description: "Monitor Samsung", category: "Mobiliario", status: "in_maintenance" });
-const ASSET_3 = makeAsset({ asset_id: 3, code: "DESK-001", description: "Mesa de trabajo", category: "Mobiliario", status: "retired" });
+const ASSET_1 = makeAsset({
+  asset_id: 1,
+  code: "LAP-001",
+  description: "HP Laptop",
+  category: "Equipos de Cómputo",
+  status: "active",
+});
+const ASSET_2 = makeAsset({
+  asset_id: 2,
+  code: "MON-001",
+  description: "Monitor Samsung",
+  category: "Mobiliario",
+  status: "in_maintenance",
+});
+const ASSET_3 = makeAsset({
+  asset_id: 3,
+  code: "DESK-001",
+  description: "Mesa de trabajo",
+  category: "Mobiliario",
+  status: "retired",
+});
 
 // ---------------------------------------------------------------------------
 // Render helper
@@ -105,10 +123,13 @@ function renderAssetList(initialPath = "/assets") {
           <Routes>
             <Route path="/assets" element={<AssetList />} />
             <Route path="/assets/new" element={<div>New Asset Page</div>} />
-            <Route path="/assets/:id" element={<div data-testid="asset-detail">Asset Detail</div>} />
+            <Route
+              path="/assets/:id"
+              element={<div data-testid="asset-detail">Asset Detail</div>}
+            />
           </Routes>
         </MemoryRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     ),
   };
 }
@@ -152,7 +173,9 @@ describe("AssetList — data display", () => {
       expect(screen.getByText("LAP-001")).toBeInTheDocument();
       expect(screen.getByText("HP Laptop")).toBeInTheDocument();
       // Category appears in both dropdown and table cell — use getAllByText
-      expect(screen.getAllByText("Equipos de Cómputo").length).toBeGreaterThanOrEqual(1);
+      expect(
+        screen.getAllByText("Equipos de Cómputo").length,
+      ).toBeGreaterThanOrEqual(1);
       // Date displayed as dd/mm/yyyy
       expect(screen.getByText("01/03/2026")).toBeInTheDocument();
     });
@@ -186,7 +209,10 @@ describe("AssetList — status badges", () => {
   });
 
   it("renders 'En Mantenimiento' badge for in_maintenance status", async () => {
-    mockFetchResponse({ data: [makeAsset({ status: "in_maintenance" })], total: 1 });
+    mockFetchResponse({
+      data: [makeAsset({ status: "in_maintenance" })],
+      total: 1,
+    });
     renderAssetList();
     await waitFor(() => {
       expect(screen.getByText("En Mantenimiento")).toBeInTheDocument();
@@ -320,7 +346,10 @@ describe("AssetList — filter badges (AC3)", () => {
 
     await waitFor(() => screen.getByText("LAP-001"));
 
-    await user.selectOptions(screen.getByLabelText("Filtrar por estado"), "active");
+    await user.selectOptions(
+      screen.getByLabelText("Filtrar por estado"),
+      "active",
+    );
     await waitFor(() => screen.getByLabelText("Quitar filtro de estado"));
 
     await user.click(screen.getByLabelText("Quitar filtro de estado"));
@@ -338,7 +367,10 @@ describe("AssetList — filter badges (AC3)", () => {
     const user = userEvent.setup();
 
     await waitFor(() => screen.getByText("LAP-001"));
-    await user.selectOptions(screen.getByLabelText("Filtrar por estado"), "active");
+    await user.selectOptions(
+      screen.getByLabelText("Filtrar por estado"),
+      "active",
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Limpiar filtros")).toBeInTheDocument();
@@ -365,7 +397,7 @@ describe("AssetList — loading state", () => {
   it("shows skeleton rows while loading", () => {
     // Never resolves — stays loading
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
-      () => new Promise(() => {})
+      () => new Promise(() => {}),
     );
     const { container } = renderAssetList();
 
@@ -380,7 +412,9 @@ describe("AssetList — empty states", () => {
     renderAssetList();
 
     await waitFor(() => {
-      expect(screen.getByText("Aún no has registrado activos.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Aún no has registrado activos."),
+      ).toBeInTheDocument();
       expect(screen.getByText("+ Registrar primer activo")).toBeInTheDocument();
     });
   });
@@ -393,14 +427,21 @@ describe("AssetList — empty states", () => {
     await waitFor(() => screen.getByText("LAP-001"));
 
     // Filter by retired status — ASSET_1 is active, no match
-    await user.selectOptions(screen.getByLabelText("Filtrar por estado"), "retired");
+    await user.selectOptions(
+      screen.getByLabelText("Filtrar por estado"),
+      "retired",
+    );
 
     await waitFor(() => {
       expect(
-        screen.getByText("No se encontraron activos con los filtros aplicados.")
+        screen.getByText(
+          "No se encontraron activos con los filtros aplicados.",
+        ),
       ).toBeInTheDocument();
       // "Limpiar filtros" appears in both badge area and empty state — at least 2
-      expect(screen.getAllByText("Limpiar filtros").length).toBeGreaterThanOrEqual(2);
+      expect(
+        screen.getAllByText("Limpiar filtros").length,
+      ).toBeGreaterThanOrEqual(2);
     });
   });
 });
@@ -411,7 +452,9 @@ describe("AssetList — error state", () => {
     renderAssetList();
 
     await waitFor(() => {
-      expect(screen.getByText(/No se pudieron cargar los activos/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/No se pudieron cargar los activos/),
+      ).toBeInTheDocument();
       expect(screen.getByText("Reintentar")).toBeInTheDocument();
     });
   });
@@ -423,7 +466,9 @@ describe("AssetList — page header", () => {
     renderAssetList();
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Activos" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Activos" }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -443,8 +488,16 @@ describe("AssetList — page header", () => {
 
 describe("AssetList — column sorting", () => {
   it("sorts by code column when header is clicked", async () => {
-    const assetA = makeAsset({ asset_id: 1, code: "AAA-001", acquisition_date: "2026-01-01" });
-    const assetB = makeAsset({ asset_id: 2, code: "ZZZ-001", acquisition_date: "2026-02-01" });
+    const assetA = makeAsset({
+      asset_id: 1,
+      code: "AAA-001",
+      acquisition_date: "2026-01-01",
+    });
+    const assetB = makeAsset({
+      asset_id: 2,
+      code: "ZZZ-001",
+      acquisition_date: "2026-02-01",
+    });
     mockFetchResponse({ data: [assetB, assetA], total: 2 });
     renderAssetList();
     const user = userEvent.setup();

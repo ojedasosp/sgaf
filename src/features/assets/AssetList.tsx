@@ -28,25 +28,27 @@ import {
 } from "@/components/ui/table";
 import { useGetAssets } from "@/hooks/useAssets";
 import type { Asset, AssetStatus } from "@/types/asset";
+import AppLayout from "@/components/layout/AppLayout";
 
 // ---------------------------------------------------------------------------
 // Status badge
 // ---------------------------------------------------------------------------
 
-const STATUS_CONFIG: Record<AssetStatus, { label: string; className: string }> = {
-  active: {
-    label: "Activo",
-    className: "bg-[#98971a]/10 text-[#98971a] border border-[#98971a]/20",
-  },
-  in_maintenance: {
-    label: "En Mantenimiento",
-    className: "bg-[#d79921]/10 text-[#d79921] border border-[#d79921]/20",
-  },
-  retired: {
-    label: "Retirado",
-    className: "bg-[#7c6f64]/10 text-[#7c6f64] border border-[#7c6f64]/20",
-  },
-};
+const STATUS_CONFIG: Record<AssetStatus, { label: string; className: string }> =
+  {
+    active: {
+      label: "Activo",
+      className: "bg-[#98971a]/10 text-[#98971a] border border-[#98971a]/20",
+    },
+    in_maintenance: {
+      label: "En Mantenimiento",
+      className: "bg-[#d79921]/10 text-[#d79921] border border-[#d79921]/20",
+    },
+    retired: {
+      label: "Retirado",
+      className: "bg-[#7c6f64]/10 text-[#7c6f64] border border-[#7c6f64]/20",
+    },
+  };
 
 function StatusBadge({ status }: { status: AssetStatus }) {
   const config = STATUS_CONFIG[status] ?? {
@@ -114,7 +116,9 @@ const COLUMNS: ColumnDef<Asset>[] = [
     header: "Fecha Adquisición",
     enableGlobalFilter: false,
     cell: ({ getValue }) => (
-      <span className="text-[#665c54] text-sm">{formatDate(getValue<string>())}</span>
+      <span className="text-[#665c54] text-sm">
+        {formatDate(getValue<string>())}
+      </span>
     ),
   },
   {
@@ -244,251 +248,280 @@ export default function AssetList() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="flex flex-col gap-4 p-6 bg-[#fbf1c7] min-h-screen">
-      {/* Page header — Task 7 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-[#3c3836]">Activos</h1>
-          {assets !== undefined && (
-            <span className="inline-flex items-center rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs font-medium text-[#665c54]">
-              {assets.length}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => navigate("/assets/new")}
-          className="rounded-md bg-[#458588] px-4 py-2 text-sm font-medium text-white hover:bg-[#458588]/90"
-        >
-          + Nuevo Activo
-        </button>
-      </div>
-
-      {/* Search + Filter controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Search input */}
-        <div className="relative">
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Buscar por código, nombre o categoría..."
-            className="w-72 rounded-md border border-[#bdae93] bg-[#f2e5bc] px-3 py-1.5 text-sm text-[#3c3836] placeholder:text-[#7c6f64] focus:outline-none focus:ring-1 focus:ring-[#458588]"
-          />
-          {searchInput && (
-            <button
-              type="button"
-              onClick={clearSearch}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7c6f64] hover:text-[#3c3836]"
-              aria-label="Limpiar búsqueda"
-            >
-              ×
-            </button>
-          )}
+    <AppLayout>
+      <div className="flex flex-col gap-4 p-6 bg-[#fbf1c7] min-h-screen">
+        {/* Page header — Task 7 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-[#3c3836]">Activos</h1>
+            {assets !== undefined && (
+              <span className="inline-flex items-center rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs font-medium text-[#665c54]">
+                {assets.length}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/assets/new")}
+            className="rounded-md bg-[#458588] px-4 py-2 text-sm font-medium text-white hover:bg-[#458588]/90"
+          >
+            + Nuevo Activo
+          </button>
         </div>
 
-        {/* Status filter */}
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-md border border-[#bdae93] bg-[#f2e5bc] px-3 py-1.5 text-sm text-[#3c3836] focus:outline-none focus:ring-1 focus:ring-[#458588]"
-          aria-label="Filtrar por estado"
-        >
-          <option value="">Todos los estados</option>
-          <option value="active">Activo</option>
-          <option value="in_maintenance">En Mantenimiento</option>
-          <option value="retired">Retirado</option>
-        </select>
-
-        {/* Category filter */}
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="rounded-md border border-[#bdae93] bg-[#f2e5bc] px-3 py-1.5 text-sm text-[#3c3836] focus:outline-none focus:ring-1 focus:ring-[#458588]"
-          aria-label="Filtrar por categoría"
-        >
-          <option value="">Todas las categorías</option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>
-              {cat}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Active filter badges */}
-      {hasActiveFilters && (
-        <div className="flex flex-wrap items-center gap-2">
-          {globalFilter && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs text-[#665c54]">
-              Búsqueda: {globalFilter}
+        {/* Search + Filter controls */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search input */}
+          <div className="relative">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder="Buscar por código, nombre o categoría..."
+              className="w-72 rounded-md border border-[#bdae93] bg-[#f2e5bc] px-3 py-1.5 text-sm text-[#3c3836] placeholder:text-[#7c6f64] focus:outline-none focus:ring-1 focus:ring-[#458588]"
+            />
+            {searchInput && (
               <button
                 type="button"
                 onClick={clearSearch}
-                className="ml-1 hover:text-[#3c3836]"
-                aria-label="Quitar filtro de búsqueda"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7c6f64] hover:text-[#3c3836]"
+                aria-label="Limpiar búsqueda"
               >
                 ×
               </button>
-            </span>
-          )}
-          {statusFilter && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs text-[#665c54]">
-              Estado: {STATUS_CONFIG[statusFilter as AssetStatus]?.label ?? statusFilter}
-              <button
-                type="button"
-                onClick={() => setStatusFilter("")}
-                className="ml-1 hover:text-[#3c3836]"
-                aria-label="Quitar filtro de estado"
-              >
-                ×
-              </button>
-            </span>
-          )}
-          {categoryFilter && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs text-[#665c54]">
-              Categoría: {categoryFilter}
-              <button
-                type="button"
-                onClick={() => setCategoryFilter("")}
-                className="ml-1 hover:text-[#3c3836]"
-                aria-label="Quitar filtro de categoría"
-              >
-                ×
-              </button>
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={clearAllFilters}
-            className="text-xs text-[#665c54] hover:text-[#3c3836] underline"
+            )}
+          </div>
+
+          {/* Status filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-md border border-[#bdae93] bg-[#f2e5bc] px-3 py-1.5 text-sm text-[#3c3836] focus:outline-none focus:ring-1 focus:ring-[#458588]"
+            aria-label="Filtrar por estado"
           >
-            Limpiar filtros
-          </button>
-        </div>
-      )}
+            <option value="">Todos los estados</option>
+            <option value="active">Activo</option>
+            <option value="in_maintenance">En Mantenimiento</option>
+            <option value="retired">Retirado</option>
+          </select>
 
-      {/* Table */}
-      <div className="rounded-md border border-[#d5c4a1] bg-[#f2e5bc]">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="border-b border-[#d5c4a1] bg-[#ebdbb2]">
-                {headerGroup.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  const sorted = header.column.getIsSorted();
-                  return (
-                    <TableHead
-                      key={header.id}
-                      className="text-[#665c54] font-medium py-3 px-4"
-                      style={{ cursor: canSort ? "pointer" : "default" }}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {canSort && (
-                          <span className="text-[#bdae93]">
-                            {sorted === "asc" ? "↑" : sorted === "desc" ? "↓" : "↕"}
-                          </span>
-                        )}
-                      </span>
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
+          {/* Category filter */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="rounded-md border border-[#bdae93] bg-[#f2e5bc] px-3 py-1.5 text-sm text-[#3c3836] focus:outline-none focus:ring-1 focus:ring-[#458588]"
+            aria-label="Filtrar por categoría"
+          >
+            <option value="">Todas las categorías</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
             ))}
-          </TableHeader>
-          <TableBody>
-            {/* Loading state: skeleton rows */}
-            {isLoading &&
-              Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
+          </select>
+        </div>
 
-            {/* Error state */}
-            {isError && (
-              <TableRow>
-                <TableCell
-                  colSpan={COLUMNS.length}
-                  className="text-center py-12 text-[#cc241d]"
+        {/* Active filter badges */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-2">
+            {globalFilter && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs text-[#665c54]">
+                Búsqueda: {globalFilter}
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="ml-1 hover:text-[#3c3836]"
+                  aria-label="Quitar filtro de búsqueda"
                 >
-                  No se pudieron cargar los activos.{" "}
-                  <button
-                    type="button"
-                    onClick={() => refetch()}
-                    className="underline hover:no-underline"
-                  >
-                    Reintentar
-                  </button>
-                </TableCell>
-              </TableRow>
+                  ×
+                </button>
+              </span>
             )}
-
-            {/* Empty state — no assets at all */}
-            {!isLoading && !isError && assets?.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={COLUMNS.length} className="text-center py-16">
-                  <p className="text-[#665c54] mb-4">
-                    Aún no has registrado activos.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => navigate("/assets/new")}
-                    className="rounded-md bg-[#458588] px-4 py-2 text-sm font-medium text-white hover:bg-[#458588]/90"
-                  >
-                    + Registrar primer activo
-                  </button>
-                </TableCell>
-              </TableRow>
+            {statusFilter && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs text-[#665c54]">
+                Estado:{" "}
+                {STATUS_CONFIG[statusFilter as AssetStatus]?.label ??
+                  statusFilter}
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("")}
+                  className="ml-1 hover:text-[#3c3836]"
+                  aria-label="Quitar filtro de estado"
+                >
+                  ×
+                </button>
+              </span>
             )}
+            {categoryFilter && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#d5c4a1] px-2.5 py-0.5 text-xs text-[#665c54]">
+                Categoría: {categoryFilter}
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter("")}
+                  className="ml-1 hover:text-[#3c3836]"
+                  aria-label="Quitar filtro de categoría"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs text-[#665c54] hover:text-[#3c3836] underline"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        )}
 
-            {/* Empty state — filters active, no results */}
-            {!isLoading &&
-              !isError &&
-              assets !== undefined &&
-              assets.length > 0 &&
-              filteredRows.length === 0 && (
+        {/* Table */}
+        <div className="rounded-md border border-[#d5c4a1] bg-[#f2e5bc]">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow
+                  key={headerGroup.id}
+                  className="border-b border-[#d5c4a1] bg-[#ebdbb2]"
+                >
+                  {headerGroup.headers.map((header) => {
+                    const canSort = header.column.getCanSort();
+                    const sorted = header.column.getIsSorted();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className="text-[#665c54] font-medium py-3 px-4"
+                        style={{ cursor: canSort ? "pointer" : "default" }}
+                        onClick={
+                          canSort
+                            ? header.column.getToggleSortingHandler()
+                            : undefined
+                        }
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                          {canSort && (
+                            <span className="text-[#bdae93]">
+                              {sorted === "asc"
+                                ? "↑"
+                                : sorted === "desc"
+                                  ? "↓"
+                                  : "↕"}
+                            </span>
+                          )}
+                        </span>
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {/* Loading state: skeleton rows */}
+              {isLoading &&
+                Array.from({ length: 5 }).map((_, i) => (
+                  <SkeletonRow key={i} />
+                ))}
+
+              {/* Error state */}
+              {isError && (
                 <TableRow>
-                  <TableCell colSpan={COLUMNS.length} className="text-center py-16">
-                    <p className="text-[#665c54] mb-4">
-                      No se encontraron activos con los filtros aplicados.
-                    </p>
+                  <TableCell
+                    colSpan={COLUMNS.length}
+                    className="text-center py-12 text-[#cc241d]"
+                  >
+                    No se pudieron cargar los activos.{" "}
                     <button
                       type="button"
-                      onClick={clearAllFilters}
-                      className="text-sm text-[#665c54] hover:text-[#3c3836] underline"
+                      onClick={() => refetch()}
+                      className="underline hover:no-underline"
                     >
-                      Limpiar filtros
+                      Reintentar
                     </button>
                   </TableCell>
                 </TableRow>
               )}
 
-            {/* Data rows */}
-            {!isLoading &&
-              !isError &&
-              filteredRows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className="border-b border-[#d5c4a1] cursor-pointer hover:bg-[#ebdbb2] focus:bg-[#ebdbb2] focus:outline-none py-3"
-                  tabIndex={0}
-                  role="link"
-                  onClick={() => navigate(`/assets/${row.original.asset_id}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      navigate(`/assets/${row.original.asset_id}`);
-                    }
-                  }}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="py-3 px-4">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
+              {/* Empty state — no assets at all */}
+              {!isLoading && !isError && assets?.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={COLUMNS.length}
+                    className="text-center py-16"
+                  >
+                    <p className="text-[#665c54] mb-4">
+                      Aún no has registrado activos.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/assets/new")}
+                      className="rounded-md bg-[#458588] px-4 py-2 text-sm font-medium text-white hover:bg-[#458588]/90"
+                    >
+                      + Registrar primer activo
+                    </button>
+                  </TableCell>
                 </TableRow>
-              ))}
-          </TableBody>
-        </Table>
+              )}
+
+              {/* Empty state — filters active, no results */}
+              {!isLoading &&
+                !isError &&
+                assets !== undefined &&
+                assets.length > 0 &&
+                filteredRows.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={COLUMNS.length}
+                      className="text-center py-16"
+                    >
+                      <p className="text-[#665c54] mb-4">
+                        No se encontraron activos con los filtros aplicados.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="text-sm text-[#665c54] hover:text-[#3c3836] underline"
+                      >
+                        Limpiar filtros
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+              {/* Data rows */}
+              {!isLoading &&
+                !isError &&
+                filteredRows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    className="border-b border-[#d5c4a1] cursor-pointer hover:bg-[#ebdbb2] focus:bg-[#ebdbb2] focus:outline-none py-3"
+                    tabIndex={0}
+                    role="link"
+                    onClick={() => navigate(`/assets/${row.original.asset_id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate(`/assets/${row.original.asset_id}`);
+                      }
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="py-3 px-4">
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

@@ -13,13 +13,12 @@ import { useAppStore } from "../store/appStore";
  */
 export function useGetDepreciationResults(
   periodMonth: number,
-  periodYear: number
+  periodYear: number,
 ) {
   const token = useAppStore((s) => s.token);
   return useQuery({
     queryKey: ["depreciation", periodMonth, periodYear],
-    queryFn: () =>
-      getDepreciationResults(periodMonth, periodYear, token ?? ""),
+    queryFn: () => getDepreciationResults(periodMonth, periodYear, token ?? ""),
     enabled: !!token,
   });
 }
