@@ -6,7 +6,6 @@ const NAV_ITEMS = [
   { label: "Depreciación", path: "/depreciation", icon: "∿" },
   { label: "Reportes PDF", path: "/reports", icon: "⎘" },
   { label: "Exportar ZEUS", path: "/export", icon: "⊡" },
-  { label: "Mantenimientos", path: "/maintenance", icon: "⚙" },
   { label: "Configuración", path: "/settings", icon: "⊶" },
 ] as const;
 

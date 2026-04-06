@@ -8,7 +8,7 @@ import { MemoryRouter } from "react-router-dom";
 import Sidebar from "./Sidebar";
 
 describe("Sidebar", () => {
-  it("renders all 7 navigation items", () => {
+  it("renders all 6 navigation items", () => {
     render(
       <MemoryRouter initialEntries={["/dashboard"]}>
         <Sidebar />
@@ -20,7 +20,7 @@ describe("Sidebar", () => {
     expect(screen.getByText("Depreciación")).toBeInTheDocument();
     expect(screen.getByText("Reportes PDF")).toBeInTheDocument();
     expect(screen.getByText("Exportar ZEUS")).toBeInTheDocument();
-    expect(screen.getByText("Mantenimientos")).toBeInTheDocument();
+    expect(screen.queryByText("Mantenimientos")).not.toBeInTheDocument();
     expect(screen.getByText("Configuración")).toBeInTheDocument();
   });
 

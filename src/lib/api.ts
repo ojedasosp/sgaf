@@ -177,6 +177,65 @@ export async function getReportStatus(
   ).then((res) => res.data);
 }
 
+/// GET /api/v1/maintenance/?asset_id=<id> — List maintenance events for an asset.
+export async function getMaintenanceEvents(
+  assetId: number,
+  token: string,
+): Promise<{ data: import("../types/maintenance").MaintenanceEvent[]; total: number }> {
+  return apiFetch<{
+    data: import("../types/maintenance").MaintenanceEvent[];
+    total: number;
+  }>(`/maintenance/?asset_id=${assetId}`, { token });
+}
+
+/// POST /api/v1/maintenance/ — Register a new maintenance event (created directly as completed).
+export async function createMaintenanceEvent(
+  payload: import("../types/maintenance").CreateMaintenancePayload,
+  token: string,
+): Promise<{ data: import("../types/maintenance").MaintenanceEvent }> {
+  return apiFetch<{ data: import("../types/maintenance").MaintenanceEvent }>(
+    "/maintenance/",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      token,
+    },
+  );
+}
+
+/// GET /api/v1/config/company — Fetch current company configuration.
+export async function getCompanyConfig(
+  token: string,
+): Promise<{ company_name: string; company_nit: string; logo_path: string | null }> {
+  return apiFetch<{
+    data: { company_name: string; company_nit: string; logo_path: string | null };
+  }>("/config/company", { token }).then((res) => res.data);
+}
+
+/// PUT /api/v1/config/company — Update company configuration.
+export async function updateCompanyConfig(
+  payload: { company_name: string; company_nit: string; logo_path: string | null },
+  token: string,
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ data: { ok: boolean } }>("/config/company", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+    token,
+  }).then((res) => res.data);
+}
+
+/// POST /api/v1/config/change-password — Change application password.
+export async function changePassword(
+  payload: { current_password: string; new_password: string; new_password_confirm: string },
+  token: string,
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ data: { ok: boolean } }>("/config/change-password", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    token,
+  }).then((res) => res.data);
+}
+
 /// Retrieve all depreciation results for a specific asset across all calculated periods.
 /// GET /api/v1/depreciation/assets/{assetId}
 export async function getAssetDepreciationHistory(

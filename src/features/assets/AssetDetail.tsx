@@ -26,6 +26,11 @@ import {
   useUpdateAsset,
 } from "../../hooks/useAssets";
 import AssetDepreciationSchedule from "../depreciation/AssetDepreciationSchedule";
+import {
+  useCreateMaintenanceEvent,
+  useGetMaintenanceEvents,
+} from "../../hooks/useMaintenance";
+import MaintenanceHistory from "../maintenance/MaintenanceHistory";
 import AppLayout from "@/components/layout/AppLayout";
 import type {
   AuditLogEntry,
@@ -35,6 +40,10 @@ import type {
   RetireAssetPayload,
   UpdateAssetPayload,
 } from "../../types/asset";
+import type {
+  CreateMaintenancePayload,
+  MaintenanceEventType,
+} from "../../types/maintenance";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -269,6 +278,60 @@ function validateAllEditFields(values: EditFormValues): EditFormErrors {
 }
 
 // ---------------------------------------------------------------------------
+// Maintenance form types and helpers
+// ---------------------------------------------------------------------------
+
+interface MaintenanceFormValues {
+  entry_date: string;
+  event_type: MaintenanceEventType | "";
+  description: string;
+  vendor: string;
+  estimated_delivery_date: string;
+  actual_delivery_date: string;
+  actual_cost: string;
+  received_by: string;
+  closing_observation: string;
+}
+
+interface MaintenanceFormErrors {
+  entry_date?: string;
+  actual_delivery_date?: string;
+  actual_cost?: string;
+  submit?: string;
+}
+
+function validateMaintenanceForm(
+  values: MaintenanceFormValues,
+): MaintenanceFormErrors {
+  const errors: MaintenanceFormErrors = {};
+  if (!values.entry_date.trim()) {
+    errors.entry_date = "La fecha de ingreso es obligatoria";
+  } else {
+    const today = new Date().toISOString().slice(0, 10);
+    if (values.entry_date > today) {
+      errors.entry_date = "La fecha de ingreso no puede ser futura";
+    }
+  }
+  if (values.actual_cost.trim()) {
+    const n = Number(values.actual_cost.trim());
+    if (isNaN(n) || n < 0) {
+      errors.actual_cost =
+        "El costo real debe ser un número válido mayor o igual a 0";
+    }
+  }
+  if (
+    values.actual_delivery_date &&
+    values.entry_date &&
+    !errors.entry_date &&
+    values.actual_delivery_date < values.entry_date
+  ) {
+    errors.actual_delivery_date =
+      "La fecha de entrega real no puede ser anterior a la fecha de ingreso";
+  }
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -301,6 +364,29 @@ export default function AssetDetail() {
 
   // Depreciation schedule section state
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+
+  // Maintenance form state
+  const [isRegisteringMaintenance, setIsRegisteringMaintenance] =
+    useState(false);
+  const [maintenanceForm, setMaintenanceForm] =
+    useState<MaintenanceFormValues>({
+      entry_date: new Date().toISOString().slice(0, 10),
+      event_type: "",
+      description: "",
+      vendor: "",
+      estimated_delivery_date: "",
+      actual_delivery_date: "",
+      actual_cost: "",
+      received_by: "",
+      closing_observation: "",
+    });
+  const [maintenanceFormErrors, setMaintenanceFormErrors] =
+    useState<MaintenanceFormErrors>({});
+
+  const { data: maintenanceEvents, isLoading: maintenanceLoading } =
+    useGetMaintenanceEvents(assetId);
+  const { mutate: createEvent, isPending: isCreatingEvent } =
+    useCreateMaintenanceEvent();
 
   // Retire mode state
   const [isRetiring, setIsRetiring] = useState(false);
@@ -476,6 +562,112 @@ export default function AssetDetail() {
             ? err.message
             : "No se puede eliminar el activo.",
         );
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Maintenance form handlers
+  // ---------------------------------------------------------------------------
+
+  function handleRegisterMaintenance() {
+    setMaintenanceForm({
+      entry_date: new Date().toISOString().slice(0, 10),
+      event_type: "",
+      description: "",
+      vendor: "",
+      estimated_delivery_date: "",
+      actual_delivery_date: "",
+      actual_cost: "",
+      received_by: "",
+      closing_observation: "",
+    });
+    setMaintenanceFormErrors({});
+    setIsRegisteringMaintenance(true);
+  }
+
+  function handleCancelRegisterMaintenance() {
+    const today = new Date().toISOString().slice(0, 10);
+    const isDirty =
+      maintenanceForm.entry_date !== today ||
+      maintenanceForm.description.trim() !== "" ||
+      maintenanceForm.vendor.trim() !== "" ||
+      maintenanceForm.event_type !== "" ||
+      maintenanceForm.estimated_delivery_date !== "" ||
+      maintenanceForm.actual_delivery_date !== "" ||
+      maintenanceForm.actual_cost !== "" ||
+      maintenanceForm.received_by !== "" ||
+      maintenanceForm.closing_observation !== "";
+    if (
+      isDirty &&
+      !window.confirm(
+        "¿Descartar cambios? Los datos ingresados se perderán.",
+      )
+    )
+      return;
+    setIsRegisteringMaintenance(false);
+  }
+
+  function handleMaintenanceFormChange(
+    field: keyof MaintenanceFormValues,
+    value: string,
+  ) {
+    setMaintenanceForm((prev) => ({ ...prev, [field]: value }));
+    if (field in maintenanceFormErrors) {
+      setMaintenanceFormErrors((prev) => {
+        const next = { ...prev };
+        delete next[field as keyof MaintenanceFormErrors];
+        return next;
+      });
+    }
+  }
+
+  function handleMaintenanceFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const errors = validateMaintenanceForm(maintenanceForm);
+    if (Object.keys(errors).length > 0) {
+      setMaintenanceFormErrors(errors);
+      return;
+    }
+    const payload: CreateMaintenancePayload = {
+      asset_id: assetId,
+      entry_date: maintenanceForm.entry_date,
+      ...(maintenanceForm.event_type
+        ? { event_type: maintenanceForm.event_type as MaintenanceEventType }
+        : {}),
+      ...(maintenanceForm.description.trim()
+        ? { description: maintenanceForm.description.trim() }
+        : {}),
+      ...(maintenanceForm.vendor.trim()
+        ? { vendor: maintenanceForm.vendor.trim() }
+        : {}),
+      ...(maintenanceForm.estimated_delivery_date
+        ? { estimated_delivery_date: maintenanceForm.estimated_delivery_date }
+        : {}),
+      ...(maintenanceForm.actual_delivery_date
+        ? { actual_delivery_date: maintenanceForm.actual_delivery_date }
+        : {}),
+      ...(maintenanceForm.actual_cost.trim()
+        ? { actual_cost: maintenanceForm.actual_cost.trim() }
+        : {}),
+      ...(maintenanceForm.received_by.trim()
+        ? { received_by: maintenanceForm.received_by.trim() }
+        : {}),
+      ...(maintenanceForm.closing_observation.trim()
+        ? { closing_observation: maintenanceForm.closing_observation.trim() }
+        : {}),
+    };
+    createEvent(payload, {
+      onSuccess: () => {
+        setIsRegisteringMaintenance(false);
+      },
+      onError: (err) => {
+        setMaintenanceFormErrors({
+          submit:
+            err instanceof Error
+              ? err.message
+              : "Error al registrar el evento de mantenimiento",
+        });
       },
     });
   }
@@ -861,6 +1053,287 @@ export default function AssetDetail() {
               {isScheduleOpen && (
                 <AssetDepreciationSchedule assetId={assetId} />
               )}
+            </div>
+
+            {/* Maintenance section */}
+            <div className="mt-6 rounded-lg border border-border bg-[#f2e5bc]">
+              <div className="flex items-center justify-between border-b border-[#d5c4a1] px-6 py-4">
+                <h2 className="text-base font-semibold text-[#3c3836]">
+                  Historial de Mantenimiento
+                </h2>
+                {asset.status === "active" && !isRegisteringMaintenance && (
+                  <button
+                    type="button"
+                    onClick={handleRegisterMaintenance}
+                    className="rounded-md bg-[#458588] px-4 py-2 text-sm font-medium text-white hover:bg-[#458588]/90"
+                  >
+                    Registrar Mantenimiento
+                  </button>
+                )}
+              </div>
+
+              {/* Inline registration form */}
+              {isRegisteringMaintenance && (
+                <form
+                  onSubmit={handleMaintenanceFormSubmit}
+                  noValidate
+                  className="border-b border-[#d5c4a1] px-6 py-4"
+                >
+                  <h3 className="mb-4 text-sm font-semibold text-[#3c3836]">
+                    Nuevo evento de mantenimiento
+                  </h3>
+                  <div className="space-y-4">
+                    {/* Entry date */}
+                    <div>
+                      <label
+                        htmlFor="maint-entry-date"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Fecha de Ingreso{" "}
+                        <span className="text-[#cc241d]">*</span>
+                      </label>
+                      <input
+                        id="maint-entry-date"
+                        type="date"
+                        value={maintenanceForm.entry_date}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "entry_date",
+                            e.target.value,
+                          )
+                        }
+                        className={`mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring ${maintenanceFormErrors.entry_date ? "border-[#cc241d]" : "border-[#bdae93]"}`}
+                      />
+                      {maintenanceFormErrors.entry_date && (
+                        <p className="mt-1 text-xs text-[#cc241d]" role="alert">
+                          {maintenanceFormErrors.entry_date}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Event type */}
+                    <div>
+                      <label
+                        htmlFor="maint-event-type"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Tipo de Mantenimiento
+                      </label>
+                      <select
+                        id="maint-event-type"
+                        value={maintenanceForm.event_type}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "event_type",
+                            e.target.value,
+                          )
+                        }
+                        className="mt-1 w-full rounded-md border border-[#bdae93] bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="">— Seleccionar —</option>
+                        <option value="preventivo">Preventivo</option>
+                        <option value="correctivo">Correctivo</option>
+                        <option value="inspeccion">Inspección</option>
+                      </select>
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <label
+                        htmlFor="maint-description"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Descripción
+                      </label>
+                      <input
+                        id="maint-description"
+                        type="text"
+                        value={maintenanceForm.description}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "description",
+                            e.target.value,
+                          )
+                        }
+                        className="mt-1 w-full rounded-md border border-[#bdae93] bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+
+                    {/* Vendor */}
+                    <div>
+                      <label
+                        htmlFor="maint-vendor"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Proveedor
+                      </label>
+                      <input
+                        id="maint-vendor"
+                        type="text"
+                        value={maintenanceForm.vendor}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange("vendor", e.target.value)
+                        }
+                        className="mt-1 w-full rounded-md border border-[#bdae93] bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+
+                    {/* Estimated delivery date */}
+                    <div>
+                      <label
+                        htmlFor="maint-estimated-delivery"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Fecha Est. de Entrega
+                      </label>
+                      <input
+                        id="maint-estimated-delivery"
+                        type="date"
+                        value={maintenanceForm.estimated_delivery_date}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "estimated_delivery_date",
+                            e.target.value,
+                          )
+                        }
+                        className="mt-1 w-full rounded-md border border-[#bdae93] bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+
+                    {/* Actual delivery date */}
+                    <div>
+                      <label
+                        htmlFor="maint-actual-delivery"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Fecha Entrega Real
+                      </label>
+                      <input
+                        id="maint-actual-delivery"
+                        type="date"
+                        value={maintenanceForm.actual_delivery_date}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "actual_delivery_date",
+                            e.target.value,
+                          )
+                        }
+                        className={`mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring ${maintenanceFormErrors.actual_delivery_date ? "border-[#cc241d]" : "border-[#bdae93]"}`}
+                      />
+                      {maintenanceFormErrors.actual_delivery_date && (
+                        <p className="mt-1 text-xs text-[#cc241d]" role="alert">
+                          {maintenanceFormErrors.actual_delivery_date}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Actual cost */}
+                    <div>
+                      <label
+                        htmlFor="maint-actual-cost"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Costo Real
+                      </label>
+                      <input
+                        id="maint-actual-cost"
+                        type="text"
+                        inputMode="decimal"
+                        value={maintenanceForm.actual_cost}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "actual_cost",
+                            e.target.value,
+                          )
+                        }
+                        className={`mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring ${maintenanceFormErrors.actual_cost ? "border-[#cc241d]" : "border-[#bdae93]"}`}
+                      />
+                      {maintenanceFormErrors.actual_cost && (
+                        <p className="mt-1 text-xs text-[#cc241d]" role="alert">
+                          {maintenanceFormErrors.actual_cost}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Received by */}
+                    <div>
+                      <label
+                        htmlFor="maint-received-by"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Recibido por
+                      </label>
+                      <input
+                        id="maint-received-by"
+                        type="text"
+                        value={maintenanceForm.received_by}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "received_by",
+                            e.target.value,
+                          )
+                        }
+                        className="mt-1 w-full rounded-md border border-[#bdae93] bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+
+                    {/* Closing observation */}
+                    <div>
+                      <label
+                        htmlFor="maint-closing-obs"
+                        className="block text-sm font-medium text-[#665c54]"
+                      >
+                        Observación de cierre
+                      </label>
+                      <textarea
+                        id="maint-closing-obs"
+                        rows={3}
+                        value={maintenanceForm.closing_observation}
+                        onChange={(e) =>
+                          handleMaintenanceFormChange(
+                            "closing_observation",
+                            e.target.value,
+                          )
+                        }
+                        className="mt-1 w-full rounded-md border border-[#bdae93] bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+                  </div>
+
+                  {maintenanceFormErrors.submit && (
+                    <p className="mt-3 text-sm text-[#cc241d]" role="alert">
+                      {maintenanceFormErrors.submit}
+                    </p>
+                  )}
+
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={isCreatingEvent}
+                      className="rounded-md bg-[#458588] px-5 py-2 text-sm font-medium text-white hover:bg-[#458588]/90 disabled:opacity-50"
+                    >
+                      {isCreatingEvent ? "Guardando..." : "Guardar"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelRegisterMaintenance}
+                      disabled={isCreatingEvent}
+                      className="rounded-md border border-[#bdae93] bg-background px-5 py-2 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Maintenance history table */}
+              <div className="px-6 py-4">
+                {maintenanceLoading ? (
+                  <p className="text-sm text-[#928374]">Cargando historial...</p>
+                ) : (
+                  <MaintenanceHistory events={maintenanceEvents ?? []} />
+                )}
+              </div>
             </div>
           </div>
         </div>
