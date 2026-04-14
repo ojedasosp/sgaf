@@ -11,6 +11,7 @@ import AssetForm from "./features/assets/AssetForm";
 import AssetList from "./features/assets/AssetList";
 import DepreciationPage from "./features/depreciation/DepreciationPage";
 import ReportsPage from "./features/reports/ReportsPage";
+import SettingsPage from "./features/settings/SettingsPage";
 import Dashboard from "./screens/Dashboard";
 import Login from "./screens/Login";
 import SetupWizard from "./screens/SetupWizard";
@@ -144,6 +145,14 @@ function App() {
         element={
           <PrivateRoute>
             <ReportsPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <PrivateRoute>
+            <SettingsPage />
           </PrivateRoute>
         }
       />

@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { useCreateAsset } from "../../hooks/useAssets";
+import { useGetCategories } from "../../hooks/useConfig";
 import type { CreateAssetPayload, DepreciationMethod } from "../../types/asset";
 import AppLayout from "@/components/layout/AppLayout";
 
@@ -144,6 +145,7 @@ const DEPRECIATION_OPTIONS: { value: DepreciationMethod; label: string }[] = [
 export default function AssetForm() {
   const navigate = useNavigate();
   const { mutate: createAsset, isPending } = useCreateAsset();
+  const { data: categories = [] } = useGetCategories();
 
   const [values, setValues] = useState<FormValues>({
     code: "",
@@ -348,15 +350,28 @@ export default function AssetForm() {
                   >
                     Categoría <span className="text-[#cc241d]">*</span>
                   </label>
-                  <input
-                    id="category"
-                    type="text"
-                    value={values.category}
-                    onChange={(e) => handleChange("category", e.target.value)}
-                    onBlur={() => handleBlur("category")}
-                    className={fieldClass("category")}
-                    placeholder="Equipos de Cómputo"
-                  />
+                  {categories.length === 0 ? (
+                    <p className="mt-1 text-sm text-[#928374]">
+                      No hay categorías configuradas. Ve a{" "}
+                      <span className="font-medium text-[#458588]">Configuración</span>{" "}
+                      para definirlas antes de registrar un activo.
+                    </p>
+                  ) : (
+                    <select
+                      id="category"
+                      value={values.category}
+                      onChange={(e) => handleChange("category", e.target.value)}
+                      onBlur={() => handleBlur("category")}
+                      className={fieldClass("category")}
+                    >
+                      <option value="">Selecciona una categoría</option>
+                      {categories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {showError("category")}
                 </div>
               </div>

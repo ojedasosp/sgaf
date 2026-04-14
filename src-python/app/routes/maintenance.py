@@ -5,8 +5,8 @@ Monetary values (actual_cost) use decimal.Decimal stored as TEXT.
 Audit trail is written via AuditLogger — never with direct INSERT to audit_logs.
 
 Asset status transitions:
-  - CREATE maintenance event: asset status active → in_maintenance (atomic)
-  - COMPLETE maintenance event: asset status in_maintenance → active (atomic)
+  - CREATE maintenance event: event created as completed directly; asset status remains active
+  - COMPLETE (PATCH) maintenance event: asset status in_maintenance → active (legacy support only)
 """
 
 from datetime import datetime, timezone
@@ -54,7 +54,7 @@ def create_maintenance_event():
     Returns 201 with the created maintenance event on success.
     Returns 400 for validation errors.
     Returns 404 if asset not found.
-    Returns 409 if asset is not active (in_maintenance or retired).
+    Returns 409 if asset is not active (retired).
     """
     data = request.get_json(silent=True) or {}
 

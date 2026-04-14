@@ -236,6 +236,27 @@ export async function changePassword(
   }).then((res) => res.data);
 }
 
+/// GET /api/v1/config/categories — Fetch configured asset category list.
+export async function getCategories(
+  token: string,
+): Promise<string[]> {
+  return apiFetch<{ data: { categories: string[] } }>("/config/categories", { token }).then(
+    (res) => res.data.categories,
+  );
+}
+
+/// PUT /api/v1/config/categories — Replace the full asset category list.
+export async function updateCategories(
+  categories: string[],
+  token: string,
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ data: { ok: boolean } }>("/config/categories", {
+    method: "PUT",
+    body: JSON.stringify({ categories }),
+    token,
+  }).then((res) => res.data);
+}
+
 /// Retrieve all depreciation results for a specific asset across all calculated periods.
 /// GET /api/v1/depreciation/assets/{assetId}
 export async function getAssetDepreciationHistory(

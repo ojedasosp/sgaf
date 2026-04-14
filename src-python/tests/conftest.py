@@ -3,15 +3,15 @@
 Provides in-memory SQLite engine and Flask test client with DB initialized.
 """
 
+from pathlib import Path
+
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 
 from migrations.runner import run_migrations
 
 
-@pytest.fixture
-def test_engine():
-    """In-memory SQLite engine with all migrations applied and FK enforcement."""
+def _make_engine_with_fk():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
 
     @event.listens_for(engine, "connect")
@@ -20,7 +20,59 @@ def test_engine():
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
+    return engine
+
+
+@pytest.fixture
+def test_engine():
+    """In-memory SQLite engine with all migrations applied and FK enforcement."""
+    engine = _make_engine_with_fk()
     run_migrations(engine)
+    return engine
+
+
+@pytest.fixture
+def test_engine_pre_009():
+    """In-memory SQLite engine with migrations 001–008 applied (pre-009 schema).
+
+    Used by data-preservation tests that need to insert rows at the pre-009
+    schema version and then apply migration 009 on top to verify the AC1
+    upgrade scenario.
+    """
+    engine = _make_engine_with_fk()
+    migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    script_name TEXT NOT NULL UNIQUE,
+                    applied_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+
+    for sql_file in sorted(migrations_dir.glob("*.sql")):
+        version = int(sql_file.name[:3])
+        if version >= 9:
+            continue
+        sql_content = sql_file.read_text(encoding="utf-8")
+        with engine.begin() as conn:
+            for statement in sql_content.split(";"):
+                stmt = statement.strip()
+                if stmt:
+                    conn.execute(text(stmt))
+            conn.execute(
+                text(
+                    "INSERT INTO schema_version (script_name, applied_at) "
+                    "VALUES (:name, :ts)"
+                ),
+                {"name": sql_file.name, "ts": "2026-04-12T00:00:00Z"},
+            )
+
     return engine
 
 

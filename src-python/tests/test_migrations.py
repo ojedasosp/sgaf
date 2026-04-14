@@ -51,8 +51,8 @@ def test_idempotent_rerun_does_not_duplicate():
     with engine.connect() as conn:
         count = conn.execute(text("SELECT COUNT(*) FROM schema_version")).scalar()
 
-    # 4 migration scripts: 001, 002, 003, 004
-    assert count == 4, f"Expected 4 rows in schema_version, got {count}"
+    # 9 migration scripts: 001–009
+    assert count == 9, f"Expected 9 rows in schema_version, got {count}"
 
 
 def test_seed_config_inserts_single_row():

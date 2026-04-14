@@ -31,6 +31,7 @@ app_config = Table(
     Column("last_monthly_pdf_generated_at", Text, nullable=True),
     Column("last_monthly_pdf_period_month", Integer, nullable=True),
     Column("last_monthly_pdf_period_year", Integer, nullable=True),
+    Column("asset_categories", Text, nullable=False, server_default="[]"),
 )
 
 fixed_assets = Table(
@@ -53,6 +54,19 @@ fixed_assets = Table(
     Column("retirement_date", Text),  # nullable
     Column("created_at", Text, nullable=False),
     Column("updated_at", Text, nullable=False),
+    # Import fields — added by migration 009 (Epic 8)
+    Column("accounting_code", Text),          # nullable — PUC accounting code
+    Column("characteristics", Text),           # nullable — technical specs
+    Column("location", Text),                  # nullable — physical location
+    Column("cost_center", Text),               # nullable — cost center
+    Column("quantity", Integer, nullable=False, server_default="1"),
+    Column("vat_amount", Text),                # nullable — TEXT per D3 (informational, no depreciation impact)
+    Column("additions_improvements", Text),    # nullable — TEXT per D3 (affects depreciable base in Story 8.4)
+    Column("fiscal_value", Text),              # nullable — TEXT per D3 (informational)
+    Column("revaluation", Text),               # nullable — TEXT per D3 (informational)
+    Column("supplier", Text),                  # nullable
+    Column("invoice_number", Text),            # nullable
+    Column("imported_accumulated_depreciation", Text),  # nullable — TEXT per D3 (editable by accountant, Story 8.4/8.5)
 )
 
 depreciation_results = Table(
@@ -74,10 +88,17 @@ maintenance_events = Table(
     Column("event_id", Integer, primary_key=True, autoincrement=True),
     Column("asset_id", Integer, nullable=False),  # FK to fixed_assets
     Column("description", Text, nullable=False),
-    Column("start_date", Text, nullable=False),  # ISO 8601 date
-    Column("end_date", Text),  # nullable — None means open
-    Column("status", Text, nullable=False, server_default="open"),  # open | closed
-    Column("cost", Text),  # nullable Decimal string
+    Column("start_date", Text, nullable=False),  # ISO 8601 date — entry date
+    Column("end_date", Text),  # nullable — kept for legacy compatibility
+    Column("status", Text, nullable=False, server_default="open"),  # open | completed
+    Column("cost", Text),  # nullable — kept for legacy compatibility
+    Column("event_type", Text),  # preventive | corrective | inspection
+    Column("vendor", Text),  # vendor / responsible party
+    Column("estimated_delivery_date", Text),  # ISO 8601 date, nullable
+    Column("actual_delivery_date", Text),  # ISO 8601 date, nullable
+    Column("actual_cost", Text),  # Decimal string, nullable
+    Column("received_by", Text),  # free text, nullable
+    Column("closing_observation", Text),  # free text, nullable
     Column("created_at", Text, nullable=False),
     Column("updated_at", Text, nullable=False),
 )

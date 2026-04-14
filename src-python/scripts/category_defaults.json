@@ -1,0 +1,8 @@
+{
+  "EDIFICACIONES":        { "useful_life_months": 240, "salvage_value": "0", "depreciation_method": "lineal", "is_depreciable": true },
+  "MAQUINARIA Y EQUIPOS": { "useful_life_months": 120, "salvage_value": "0", "depreciation_method": "lineal", "is_depreciable": true },
+  "MUEBLES Y ENSERES":    { "useful_life_months": 120, "salvage_value": "0", "depreciation_method": "lineal", "is_depreciable": true },
+  "TERRENOS":             { "useful_life_months": 0,   "salvage_value": "0", "depreciation_method": "none",   "is_depreciable": false },
+  "Equipos de Cómputo":   { "useful_life_months": 60,  "salvage_value": "0", "depreciation_method": "lineal", "is_depreciable": true },
+  "Vehículos":            { "useful_life_months": 60,  "salvage_value": "0", "depreciation_method": "lineal", "is_depreciable": true }
+}

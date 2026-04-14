@@ -3,7 +3,7 @@ import AppLayout from "../../components/layout/AppLayout";
 import LoadingSpinner from "../../components/shared/LoadingSpinner";
 import ErrorMessage from "../../components/shared/ErrorMessage";
 import CompanyForm from "./CompanyForm";
-import { useGetCompanyConfig, useChangePassword } from "../../hooks/useConfig";
+import { useGetCompanyConfig, useChangePassword, useGetCategories, useUpdateCategories } from "../../hooks/useConfig";
 import { ApiError } from "../../lib/api";
 
 interface PasswordErrors {
@@ -25,11 +25,56 @@ export default function SettingsPage() {
 
   const changePasswordMutation = useChangePassword();
 
+  // Categories state
+  const { data: categories = [], isLoading: catLoading } = useGetCategories();
+  const updateCategoriesMutation = useUpdateCategories();
+  const [newCategory, setNewCategory] = useState("");
+  const [catError, setCatError] = useState<string | undefined>();
+  const [catSuccess, setCatSuccess] = useState(false);
+
   useEffect(() => {
     if (!pwSuccess) return;
     const timer = setTimeout(() => setPwSuccess(false), 4000);
     return () => clearTimeout(timer);
   }, [pwSuccess]);
+
+  useEffect(() => {
+    if (!catSuccess) return;
+    const timer = setTimeout(() => setCatSuccess(false), 4000);
+    return () => clearTimeout(timer);
+  }, [catSuccess]);
+
+  function handleAddCategory() {
+    const trimmed = newCategory.trim();
+    if (!trimmed) {
+      setCatError("El nombre de la categoría no puede estar vacío");
+      return;
+    }
+    if (categories.includes(trimmed)) {
+      setCatError("Esa categoría ya existe");
+      return;
+    }
+    const updated = [...categories, trimmed];
+    updateCategoriesMutation.mutate(updated, {
+      onSuccess: () => {
+        setNewCategory("");
+        setCatError(undefined);
+        setCatSuccess(true);
+      },
+      onError: () => setCatError("Error al guardar la categoría"),
+    });
+  }
+
+  function handleRemoveCategory(index: number) {
+    const updated = categories.filter((_, i) => i !== index);
+    updateCategoriesMutation.mutate(updated, {
+      onSuccess: () => {
+        setCatError(undefined);
+        setCatSuccess(true);
+      },
+      onError: () => setCatError("Error al eliminar la categoría"),
+    });
+  }
 
   function validatePassword(): PasswordErrors {
     const errs: PasswordErrors = {};
@@ -88,6 +133,7 @@ export default function SettingsPage() {
 
   return (
     <AppLayout>
+    <div className= "m-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-[#3c3836]">Configuración</h1>
       </div>
@@ -207,8 +253,70 @@ export default function SettingsPage() {
               </div>
             </form>
           </div>
+
+          {/* Categories Section */}
+          <div className="border-t border-[#d5c4a1] pt-6 mt-6">
+            <h2 className="text-base font-semibold text-[#d79921] mb-4">
+              Categorías de Activos
+            </h2>
+
+            {catLoading ? (
+              <LoadingSpinner />
+            ) : (
+              <>
+                {categories.length === 0 ? (
+                  <p className="text-sm text-[#928374] mb-4">
+                    No hay categorías configuradas.
+                  </p>
+                ) : (
+                  <ul className="mb-4 space-y-2">
+                    {categories.map((cat, i) => (
+                      <li key={cat} className="flex items-center justify-between rounded-md border border-[#d5c4a1] bg-[#fbf1c7] px-3 py-2 text-sm text-[#3c3836]">
+                        <span>{cat}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCategory(i)}
+                          disabled={updateCategoriesMutation.isPending}
+                          className="text-[#cc241d] hover:underline text-xs disabled:opacity-50"
+                        >
+                          Eliminar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCategory}
+                    onChange={(e) => { setNewCategory(e.target.value); setCatError(undefined); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddCategory(); } }}
+                    placeholder="Nueva categoría"
+                    className="flex-1 rounded-md border border-[#d5c4a1] bg-[#fbf1c7] px-3 py-2 text-sm text-[#3c3836] focus:outline-none focus:ring-2 focus:ring-[#d79921]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    disabled={updateCategoriesMutation.isPending}
+                    className="rounded-md bg-[#d79921] px-4 py-2 text-sm font-medium text-[#fbf1c7] hover:bg-[#b57614] disabled:opacity-50"
+                  >
+                    Agregar
+                  </button>
+                </div>
+
+                {catError && (
+                  <p className="mt-2 text-sm text-[#cc241d]">{catError}</p>
+                )}
+                {catSuccess && (
+                  <p className="mt-2 text-sm text-[#98971a]">Categoría guardada.</p>
+                )}
+              </>
+            )}
+          </div>
         </div>
       ) : null}
+      </div>
     </AppLayout>
   );
 }
