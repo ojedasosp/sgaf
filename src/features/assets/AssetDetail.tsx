@@ -69,12 +69,14 @@ const METHOD_LABELS: Record<DepreciationMethod, string> = {
   straight_line: "Lineal",
   sum_of_digits: "Suma de Dígitos",
   declining_balance: "Saldo Decreciente",
+  none: "Sin Depreciación (Terrenos)",
 };
 
 const DEPRECIATION_OPTIONS: { value: DepreciationMethod; label: string }[] = [
   { value: "straight_line", label: "Lineal" },
   { value: "sum_of_digits", label: "Suma de Dígitos" },
   { value: "declining_balance", label: "Saldo Decreciente" },
+  { value: "none", label: "Sin Depreciación (Terrenos)" },
 ];
 
 const ACTION_LABELS: Record<string, string> = {
@@ -174,6 +176,15 @@ interface EditFormValues {
   useful_life_months: string;
   acquisition_date: string;
   depreciation_method: DepreciationMethod;
+  // Import fields (Story 8.5) — empty string represents null/unset
+  imported_accumulated_depreciation: string;
+  additions_improvements: string;
+  accounting_code: string;
+  cost_center: string;
+  supplier: string;
+  invoice_number: string;
+  location: string;
+  characteristics: string;
 }
 
 interface EditFormErrors {
@@ -186,6 +197,9 @@ interface EditFormErrors {
   acquisition_date?: string;
   depreciation_method?: string;
   submit?: string;
+  // Import field errors (Story 8.5)
+  imported_accumulated_depreciation?: string;
+  additions_improvements?: string;
 }
 
 function assetToFormValues(asset: Asset): EditFormValues {
@@ -198,6 +212,16 @@ function assetToFormValues(asset: Asset): EditFormValues {
     useful_life_months: String(asset.useful_life_months),
     acquisition_date: asset.acquisition_date,
     depreciation_method: asset.depreciation_method,
+    // import fields: null → empty string
+    imported_accumulated_depreciation:
+      asset.imported_accumulated_depreciation ?? "",
+    additions_improvements: asset.additions_improvements ?? "",
+    accounting_code: asset.accounting_code ?? "",
+    cost_center: asset.cost_center ?? "",
+    supplier: asset.supplier ?? "",
+    invoice_number: asset.invoice_number ?? "",
+    location: asset.location ?? "",
+    characteristics: asset.characteristics ?? "",
   };
 }
 
@@ -240,7 +264,10 @@ function validateEditField(
       const months = Number(strVal);
       if (!Number.isInteger(months) || isNaN(months))
         return "La vida útil debe ser un número entero";
-      if (months <= 0) return "La vida útil debe ser mayor a 0";
+      if (months < 0) return "La vida útil no puede ser negativa";
+      // Allow 0 only for TERRENOS (method="none")
+      if (months === 0 && values.depreciation_method !== "none")
+        return "La vida útil debe ser mayor a 0 para este método de depreciación";
       break;
     }
     case "acquisition_date": {
@@ -254,6 +281,26 @@ function validateEditField(
     case "depreciation_method":
       if (!strVal) return "El método de depreciación es obligatorio";
       break;
+    case "imported_accumulated_depreciation": {
+      if (strVal === "") break; // optional field
+      const n = Number(strVal);
+      if (isNaN(n)) return "Debe ser un número válido";
+      if (n < 0) return "No puede ser negativo";
+      // Cross-field: ≤ historical_cost + additions_improvements
+      const hc = Number(String(values.historical_cost).trim());
+      const ai = Number(String(values.additions_improvements).trim() || "0");
+      if (!isNaN(hc) && hc > 0 && n > hc + ai) {
+        return "No puede superar el costo efectivo (costo histórico + adiciones)";
+      }
+      break;
+    }
+    case "additions_improvements": {
+      if (strVal === "") break; // optional field
+      const n2 = Number(strVal);
+      if (isNaN(n2)) return "Debe ser un número válido";
+      if (n2 < 0) return "No puede ser negativo";
+      break;
+    }
   }
   return undefined;
 }
@@ -269,6 +316,8 @@ function validateAllEditFields(values: EditFormValues): EditFormErrors {
     "useful_life_months",
     "acquisition_date",
     "depreciation_method",
+    "imported_accumulated_depreciation",
+    "additions_improvements",
   ];
   for (const field of fields) {
     const err = validateEditField(field, values);
@@ -364,6 +413,9 @@ export default function AssetDetail() {
 
   // Depreciation schedule section state
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+
+  // Import/accounting section state (view mode)
+  const [isImportSectionOpen, setIsImportSectionOpen] = useState(false);
 
   // Maintenance form state
   const [isRegisteringMaintenance, setIsRegisteringMaintenance] =
@@ -467,6 +519,24 @@ export default function AssetDetail() {
 
     setEditErrors({});
 
+    // Impact warning — confirm before saving depreciation-affecting field changes (AC4)
+    const HIGH_IMPACT_FIELDS: (keyof EditFormValues)[] = [
+      "imported_accumulated_depreciation",
+      "additions_improvements",
+    ];
+    const originalValues = asset ? assetToFormValues(asset) : null;
+    if (originalValues) {
+      const hasHighImpactChange = HIGH_IMPACT_FIELDS.some(
+        (f) => editValues[f] !== originalValues[f],
+      );
+      if (hasHighImpactChange) {
+        const confirmed = window.confirm(
+          "Has modificado campos que afectan los cálculos de depreciación. ¿Deseas guardar los cambios?",
+        );
+        if (!confirmed) return;
+      }
+    }
+
     const payload: UpdateAssetPayload = {
       code: editValues.code.trim(),
       description: editValues.description.trim(),
@@ -476,6 +546,17 @@ export default function AssetDetail() {
       useful_life_months: parseInt(editValues.useful_life_months, 10),
       acquisition_date: editValues.acquisition_date,
       depreciation_method: editValues.depreciation_method,
+      // import fields: empty string → null (stored as NULL in DB)
+      imported_accumulated_depreciation:
+        editValues.imported_accumulated_depreciation.trim() || null,
+      additions_improvements:
+        editValues.additions_improvements.trim() || null,
+      accounting_code: editValues.accounting_code.trim() || null,
+      cost_center: editValues.cost_center.trim() || null,
+      supplier: editValues.supplier.trim() || null,
+      invoice_number: editValues.invoice_number.trim() || null,
+      location: editValues.location.trim() || null,
+      characteristics: editValues.characteristics.trim() || null,
     };
 
     updateAsset(
@@ -917,6 +998,67 @@ export default function AssetDetail() {
                   value={formatDateTime(asset.updated_at)}
                 />
               </dl>
+            </div>
+
+            {/* Datos de Importación / Contables — collapsible (AC1) */}
+            <div className="mb-6 rounded-lg border border-border bg-[#f2e5bc]">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-6 py-4 text-left"
+                onClick={() => setIsImportSectionOpen((v) => !v)}
+                aria-expanded={isImportSectionOpen}
+              >
+                <h2 className="text-base font-semibold text-[#3c3836]">
+                  Datos de Importación / Contables
+                </h2>
+                <span className="text-sm text-[#665c54]">
+                  {isImportSectionOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {isImportSectionOpen && (
+                <dl className="divide-y divide-[#d5c4a1] px-6 pb-4">
+                  <FieldRow
+                    label="Depreciación Acumulada al Importar"
+                    value={
+                      <span className="font-mono">
+                        {asset.imported_accumulated_depreciation ?? "—"}
+                      </span>
+                    }
+                  />
+                  <FieldRow
+                    label="Adiciones y Mejoras"
+                    value={
+                      <span className="font-mono">
+                        {asset.additions_improvements ?? "—"}
+                      </span>
+                    }
+                  />
+                  <FieldRow
+                    label="Código Contable (PUC)"
+                    value={asset.accounting_code ?? "—"}
+                  />
+                  <FieldRow
+                    label="Centro de Costo"
+                    value={asset.cost_center ?? "—"}
+                  />
+                  <FieldRow
+                    label="Proveedor"
+                    value={asset.supplier ?? "—"}
+                  />
+                  <FieldRow
+                    label="Factura"
+                    value={asset.invoice_number ?? "—"}
+                  />
+                  <FieldRow
+                    label="Ubicación"
+                    value={asset.location ?? "—"}
+                  />
+                  <FieldRow
+                    label="Características"
+                    value={asset.characteristics ?? "—"}
+                  />
+                </dl>
+              )}
             </div>
 
             {/* Retire form — shown inline when isRetiring */}
@@ -1495,7 +1637,7 @@ export default function AssetDetail() {
                   <input
                     id="useful_life_months"
                     type="number"
-                    min="1"
+                    min="0"
                     step="1"
                     value={editValues.useful_life_months}
                     onChange={(e) =>
@@ -1557,6 +1699,197 @@ export default function AssetDetail() {
                     ))}
                   </select>
                   {showError("depreciation_method")}
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Datos de Importación / Contables (Story 8.5) */}
+            <div className="mb-6 rounded-lg border border-border bg-[#f2e5bc] p-6">
+              <h2 className="mb-4 text-lg font-semibold text-[#3c3836]">
+                Datos de Importación / Contables
+              </h2>
+              <div className="space-y-4">
+                {/* imported_accumulated_depreciation */}
+                <div>
+                  <label
+                    htmlFor="imported_accumulated_depreciation"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Depreciación Acumulada al Importar
+                  </label>
+                  <input
+                    id="imported_accumulated_depreciation"
+                    type="text"
+                    inputMode="decimal"
+                    value={editValues.imported_accumulated_depreciation}
+                    onChange={(e) =>
+                      handleEditChange(
+                        "imported_accumulated_depreciation",
+                        e.target.value,
+                      )
+                    }
+                    onBlur={() =>
+                      handleEditBlur("imported_accumulated_depreciation")
+                    }
+                    className={`${fieldClass("imported_accumulated_depreciation")} font-mono text-right`}
+                    placeholder="0.00"
+                  />
+                  <p className="mt-1 text-xs text-[#d79921]">
+                    ⚠ Modificar este valor recalculará el valor en libros del activo
+                  </p>
+                  {showError("imported_accumulated_depreciation")}
+                </div>
+
+                {/* additions_improvements */}
+                <div>
+                  <label
+                    htmlFor="additions_improvements"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Adiciones y Mejoras Capitalizadas
+                  </label>
+                  <input
+                    id="additions_improvements"
+                    type="text"
+                    inputMode="decimal"
+                    value={editValues.additions_improvements}
+                    onChange={(e) =>
+                      handleEditChange("additions_improvements", e.target.value)
+                    }
+                    onBlur={() => handleEditBlur("additions_improvements")}
+                    className={`${fieldClass("additions_improvements")} font-mono text-right`}
+                    placeholder="0.00"
+                  />
+                  <p className="mt-1 text-xs text-[#d79921]">
+                    ⚠ Modificar afecta la base depreciable
+                  </p>
+                  {showError("additions_improvements")}
+                </div>
+
+                {/* accounting_code */}
+                <div>
+                  <label
+                    htmlFor="accounting_code"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Código Contable (PUC)
+                  </label>
+                  <input
+                    id="accounting_code"
+                    type="text"
+                    value={editValues.accounting_code}
+                    onChange={(e) =>
+                      handleEditChange("accounting_code", e.target.value)
+                    }
+                    onBlur={() => handleEditBlur("accounting_code")}
+                    className={fieldClass("accounting_code")}
+                    placeholder="1524"
+                  />
+                </div>
+
+                {/* cost_center */}
+                <div>
+                  <label
+                    htmlFor="cost_center"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Centro de Costo
+                  </label>
+                  <input
+                    id="cost_center"
+                    type="text"
+                    value={editValues.cost_center}
+                    onChange={(e) =>
+                      handleEditChange("cost_center", e.target.value)
+                    }
+                    onBlur={() => handleEditBlur("cost_center")}
+                    className={fieldClass("cost_center")}
+                    placeholder="CC-01"
+                  />
+                </div>
+
+                {/* supplier */}
+                <div>
+                  <label
+                    htmlFor="supplier"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Proveedor
+                  </label>
+                  <input
+                    id="supplier"
+                    type="text"
+                    value={editValues.supplier}
+                    onChange={(e) =>
+                      handleEditChange("supplier", e.target.value)
+                    }
+                    onBlur={() => handleEditBlur("supplier")}
+                    className={fieldClass("supplier")}
+                    placeholder="Nombre del proveedor"
+                  />
+                </div>
+
+                {/* invoice_number */}
+                <div>
+                  <label
+                    htmlFor="invoice_number"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Factura
+                  </label>
+                  <input
+                    id="invoice_number"
+                    type="text"
+                    value={editValues.invoice_number}
+                    onChange={(e) =>
+                      handleEditChange("invoice_number", e.target.value)
+                    }
+                    onBlur={() => handleEditBlur("invoice_number")}
+                    className={fieldClass("invoice_number")}
+                    placeholder="FAC-2024-001"
+                  />
+                </div>
+
+                {/* location */}
+                <div>
+                  <label
+                    htmlFor="location"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Ubicación
+                  </label>
+                  <input
+                    id="location"
+                    type="text"
+                    value={editValues.location}
+                    onChange={(e) =>
+                      handleEditChange("location", e.target.value)
+                    }
+                    onBlur={() => handleEditBlur("location")}
+                    className={fieldClass("location")}
+                    placeholder="Oficina 201"
+                  />
+                </div>
+
+                {/* characteristics */}
+                <div>
+                  <label
+                    htmlFor="characteristics"
+                    className="block text-sm font-medium text-[#665c54]"
+                  >
+                    Características
+                  </label>
+                  <input
+                    id="characteristics"
+                    type="text"
+                    value={editValues.characteristics}
+                    onChange={(e) =>
+                      handleEditChange("characteristics", e.target.value)
+                    }
+                    onBlur={() => handleEditBlur("characteristics")}
+                    className={fieldClass("characteristics")}
+                    placeholder="Especificaciones técnicas"
+                  />
                 </div>
               </div>
             </div>

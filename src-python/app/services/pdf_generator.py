@@ -47,6 +47,7 @@ METHOD_LABELS = {
     "straight_line": "Línea Recta (Lineal)",
     "sum_of_digits": "Suma de Dígitos",
     "declining_balance": "Saldo Decreciente",
+    "none": "Sin Depreciación (Terrenos)",
 }
 
 # Gruvbox Light palette for PDF styling

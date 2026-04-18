@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-_VALID_METHODS = {"straight_line", "sum_of_digits", "declining_balance"}
+_VALID_METHODS = {"straight_line", "sum_of_digits", "declining_balance", "none"}
 
 
 def validate_asset_create(data: dict[str, Any]) -> list[dict[str, str]]:
@@ -257,13 +257,26 @@ def validate_asset_update(data: dict[str, Any]) -> list[dict[str, str]]:
         else:
             try:
                 useful_life_int = int(useful_life)
-                if useful_life_int <= 0:
+                if useful_life_int < 0:
                     errors.append(
                         {
                             "field": "useful_life_months",
-                            "message": "Useful life must be greater than 0",
+                            "message": "Useful life must be zero or greater",
                         }
                     )
+                elif useful_life_int == 0:
+                    # 0 is only valid for TERRENOS (depreciation_method="none")
+                    method_in_payload = str(data.get("depreciation_method", "")).strip()
+                    if method_in_payload != "none":
+                        errors.append(
+                            {
+                                "field": "useful_life_months",
+                                "message": (
+                                    "Useful life must be greater than 0 "
+                                    "for this depreciation method"
+                                ),
+                            }
+                        )
             except (ValueError, TypeError):
                 errors.append(
                     {
@@ -299,6 +312,90 @@ def validate_asset_update(data: dict[str, Any]) -> list[dict[str, str]]:
             errors.append(
                 {"field": "depreciation_method", "message": "Invalid depreciation method"}
             )
+
+    # --- imported_accumulated_depreciation (if present, Story 8.5) ---
+    if "imported_accumulated_depreciation" in data:
+        val = data["imported_accumulated_depreciation"]
+        if val is not None and str(val).strip() != "":
+            try:
+                iad = Decimal(str(val))
+                if iad.is_nan() or iad.is_infinite():
+                    raise InvalidOperation
+                if iad < Decimal("0"):
+                    errors.append(
+                        {
+                            "field": "imported_accumulated_depreciation",
+                            "message": "Imported accumulated depreciation must be zero or greater",
+                        }
+                    )
+            except InvalidOperation:
+                errors.append(
+                    {
+                        "field": "imported_accumulated_depreciation",
+                        "message": "Imported accumulated depreciation must be a valid number",
+                    }
+                )
+
+    # --- additions_improvements (if present, Story 8.5) ---
+    if "additions_improvements" in data:
+        val = data["additions_improvements"]
+        if val is not None and str(val).strip() != "":
+            try:
+                ai = Decimal(str(val))
+                if ai.is_nan() or ai.is_infinite():
+                    raise InvalidOperation
+                if ai < Decimal("0"):
+                    errors.append(
+                        {
+                            "field": "additions_improvements",
+                            "message": "Additions and improvements must be zero or greater",
+                        }
+                    )
+            except InvalidOperation:
+                errors.append(
+                    {
+                        "field": "additions_improvements",
+                        "message": "Additions and improvements must be a valid number",
+                    }
+                )
+
+    # --- Cross-field: imported_accumulated_depreciation <= effective_cost (Story 8.5) ---
+    # Only when both historical_cost and imported_accumulated_depreciation are in the payload
+    # and have no prior errors.
+    iad_present = (
+        "imported_accumulated_depreciation" in data
+        and data.get("imported_accumulated_depreciation") not in (None, "", "0", "0.0", "0.0000")
+        and not any(e["field"] == "imported_accumulated_depreciation" for e in errors)
+    )
+    hc_present = "historical_cost" in data and not any(
+        e["field"] == "historical_cost" for e in errors
+    )
+    ai_present = "additions_improvements" in data and not any(
+        e["field"] == "additions_improvements" for e in errors
+    )
+    if iad_present and hc_present:
+        try:
+            iad = Decimal(str(data["imported_accumulated_depreciation"]))
+            hc = Decimal(str(data["historical_cost"]))
+            ai_val = data.get("additions_improvements")
+            ai = (
+                Decimal(str(ai_val))
+                if ai_present and ai_val
+                else Decimal("0")
+            )
+            effective_cost = hc + ai
+            if iad > effective_cost:
+                errors.append(
+                    {
+                        "field": "imported_accumulated_depreciation",
+                        "message": (
+                            "Imported accumulated depreciation cannot exceed "
+                            "effective cost (historical_cost + additions_improvements)"
+                        ),
+                    }
+                )
+        except (InvalidOperation, Exception):
+            pass  # Individual field errors already reported above
 
     return errors
 

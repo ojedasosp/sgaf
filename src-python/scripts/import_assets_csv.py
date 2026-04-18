@@ -335,9 +335,19 @@ def _load_defaults() -> dict:
 
 
 def _read_csv_rows(
-    csv_path: pathlib.Path, encoding: str, delimiter: str
+    csv_path: pathlib.Path,
+    encoding: str,
+    delimiter: str,
+    encoding_errors: str = "replace",
 ) -> list[dict]:
-    with open(csv_path, encoding=encoding, newline="") as f:
+    """Read a CSV into a list of dicts.
+
+    ``encoding_errors="replace"`` is the default so a single stray byte (the
+    legacy CSV from Excel occasionally carries un-mapped bytes like 0x90) does
+    not abort the whole import — those rows surface in the report as parse
+    errors if the replacement breaks a required field.
+    """
+    with open(csv_path, encoding=encoding, newline="", errors=encoding_errors) as f:
         reader = csv.DictReader(f, delimiter=delimiter)
         return [dict(row) for row in reader]
 
@@ -368,75 +378,89 @@ def run_import(
     report.total_read = len(raw_rows)
 
     # Phase 1 — parse each row into a payload or collect an error.
+    # H2 fix: normalize the CODIGO key lookup to handle trailing-space headers.
+    def _get_codigo(raw: dict) -> str:
+        for k, v in raw.items():
+            if k is not None and k.strip() == "CODIGO":
+                return (v or "").strip()
+        return "?"
+
     parsed: list[tuple[int, dict[str, Any]]] = []
     for idx, raw in enumerate(raw_rows, start=1):
         try:
             payload = build_insert_payload(raw, defaults, now_iso=started_at)
         except ValueError as exc:
-            code = (raw.get("CODIGO") or "").strip() or "?"
-            report.errors.append((idx, code, str(exc)))
+            report.errors.append((idx, _get_codigo(raw), str(exc)))
             continue
         parsed.append((idx, payload))
 
     # Phase 2 — duplicate detection (CSV-internal + against DB).
+    # H1 fix: engine is disposed in the finally block below.
     engine = create_engine(f"sqlite:///{db_path}")
-    with engine.connect() as conn:
-        existing_codes = {
-            row[0]
-            for row in conn.execute(select(fixed_assets.c.code)).fetchall()
-        }
+    try:
+        with engine.connect() as conn:
+            existing_codes = {
+                row[0]
+                for row in conn.execute(select(fixed_assets.c.code)).fetchall()
+            }
 
-    seen_in_csv: set[str] = set()
-    deduped: list[tuple[int, dict[str, Any]]] = []
-    for idx, payload in parsed:
-        code = payload["code"]
-        if code in existing_codes:
-            report.errors.append(
-                (idx, code, "duplicate code — already exists in fixed_assets")
-            )
-            continue
-        if code in seen_in_csv:
-            report.errors.append(
-                (idx, code, "duplicate code within CSV — first occurrence wins")
-            )
-            continue
-        seen_in_csv.add(code)
-        deduped.append((idx, payload))
-
-    # Phase 3 — commit (skipped on dry-run).
-    if dry_run:
-        return report
-
-    logger = audit_logger or AuditLogger()
-    current_idx = 0
-    current_code = "?"
-    with engine.connect() as conn:
-        trans = conn.begin()
-        try:
-            for idx, payload in deduped:
-                current_idx = idx
-                current_code = payload["code"]
-                result = conn.execute(insert(fixed_assets).values(**payload))
-                new_id = result.lastrowid
-                logger.log_change(
-                    entity_type="asset",
-                    entity_id=new_id,
-                    action="CREATE",
-                    actor="system",
-                    new_value=json.dumps(
-                        {"code": payload["code"], "category": payload["category"]},
-                        ensure_ascii=False,
-                    ),
-                    conn=conn,
+        seen_in_csv: set[str] = set()
+        deduped: list[tuple[int, dict[str, Any]]] = []
+        for idx, payload in parsed:
+            code = payload["code"]
+            if code in existing_codes:
+                report.errors.append(
+                    (idx, code, "duplicate code — already exists in fixed_assets")
                 )
-                report.successful += 1
-            trans.commit()
-        except Exception as exc:  # noqa: BLE001 — atomic batch on any failure
-            trans.rollback()
-            report.errors.append(
-                (current_idx, current_code, f"DB error — batch rolled back: {exc}")
-            )
-            report.successful = 0  # nothing persisted
+                continue
+            if code in seen_in_csv:
+                report.errors.append(
+                    (idx, code, "duplicate code within CSV — first occurrence wins")
+                )
+                continue
+            seen_in_csv.add(code)
+            deduped.append((idx, payload))
+
+        # Phase 3 — commit (skipped on dry-run).
+        if dry_run:
+            return report
+
+        logger = audit_logger or AuditLogger()
+        current_idx = 0
+        current_code = "?"
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                for idx, payload in deduped:
+                    current_idx = idx
+                    current_code = payload["code"]
+                    result = conn.execute(insert(fixed_assets).values(**payload))
+                    new_id = result.lastrowid
+                    # M1 fix: pass started_at so audit timestamps match
+                    # fixed_assets.created_at — entire batch is co-timestamped
+                    # (Task 5.5: single import batch queryable as a unit).
+                    logger.log_change(
+                        entity_type="asset",
+                        entity_id=new_id,
+                        action="CREATE",
+                        actor="system",
+                        new_value=json.dumps(
+                            {"code": payload["code"], "category": payload["category"]},
+                            ensure_ascii=False,
+                        ),
+                        conn=conn,
+                        timestamp=started_at,
+                    )
+                    report.successful += 1
+                trans.commit()
+            except Exception as exc:  # noqa: BLE001 — atomic batch on any failure
+                trans.rollback()
+                report.errors.append(
+                    (current_idx, current_code, f"DB error — batch rolled back: {exc}")
+                )
+                report.successful = 0  # nothing persisted
+    finally:
+        engine.dispose()
 
     return report
 

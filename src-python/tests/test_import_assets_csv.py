@@ -9,14 +9,15 @@ import pytest
 from sqlalchemy import create_engine, event, select, text
 
 from app.models.tables import audit_logs, fixed_assets
+from app.utils.audit_logger import AuditLogger
 from migrations.runner import run_migrations
-from scripts import import_assets_csv
 from scripts.import_assets_csv import (
     _decimal_or_none_to_db,
     _map_engine_method,
     _normalize_row,
     build_insert_payload,
     get_category_defaults,
+    main,
     parse_decimal_or_none,
     parse_int_or_default,
     parse_iso_date,
@@ -329,31 +330,27 @@ class TestLiveImport:
 
 
 class TestAC4Rollback:
-    def test_ac4_db_error_rolls_back_whole_batch(self, tmp_path, tmp_db, monkeypatch):
-        # AC4 — force an exception on the third insert; assert nothing persisted.
+    def test_ac4_db_error_rolls_back_whole_batch(self, tmp_path, tmp_db):
+        # AC4 — M3 fix: replaced fragile SQLAlchemy-monkeypatch with an
+        # injectable AuditLogger subclass that raises on the 3rd audit call.
+        # The exception bubbles through run_import's except → trans.rollback(),
+        # undoing ALL fixed_assets inserts and prior audit_logs entries.
         csv_path = _write_csv(
             tmp_path / "in.csv",
             [_base_row(CODIGO=f"ROLL-{i}") for i in range(5)],
         )
 
-        real_insert = import_assets_csv.insert
-        call_count = {"n": 0}
+        class _FailOnThirdAudit(AuditLogger):
+            _calls = 0
 
-        def _flaky_insert(table):
-            stmt = real_insert(table)
-            original_values = stmt.values
+            def log_change(self, **kwargs):  # type: ignore[override]
+                self.__class__._calls += 1
+                if self.__class__._calls == 3:
+                    raise RuntimeError("simulated audit failure on 3rd call")
+                super().log_change(**kwargs)
 
-            def _wrapped_values(**kwargs):
-                call_count["n"] += 1
-                if call_count["n"] == 3:
-                    raise RuntimeError("simulated DB error")
-                return original_values(**kwargs)
-
-            stmt.values = _wrapped_values  # type: ignore[method-assign]
-            return stmt
-
-        monkeypatch.setattr(import_assets_csv, "insert", _flaky_insert)
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        _FailOnThirdAudit._calls = 0  # reset between test runs
+        report = run_import(csv_path, tmp_db, dry_run=False, audit_logger=_FailOnThirdAudit())
         assert report.successful == 0
         assert _row_count(tmp_db, fixed_assets) == 0
         assert _row_count(tmp_db, audit_logs) == 0
@@ -605,3 +602,94 @@ class TestDecimalHelpers:
         assert _decimal_or_none_to_db("") is None
         assert _decimal_or_none_to_db("11896318,06") == "11896318.0600"
         assert _decimal_or_none_to_db("0") == "0.0000"
+
+
+class TestMainExitCodes:
+    """M2 fix: verify Task 1.4 exit codes via the CLI main() entry point."""
+
+    def test_exit_0_on_clean_live_import(self, tmp_path, tmp_db):
+        # Exit 0 — no errors, live mode, all rows succeed.
+        csv_path = _write_csv(tmp_path / "in.csv", [_base_row(CODIGO="EX0-1")])
+        code = main(["--csv", str(csv_path), "--db", str(tmp_db)])
+        assert code == 0
+
+    def test_exit_0_on_clean_dry_run(self, tmp_path, tmp_db):
+        # Exit 0 — no errors, dry-run mode.
+        csv_path = _write_csv(tmp_path / "in.csv", [_base_row(CODIGO="EX0-DR")])
+        code = main(["--csv", str(csv_path), "--db", str(tmp_db), "--dry-run"])
+        assert code == 0
+
+    def test_exit_1_csv_not_found(self, tmp_path, tmp_db):
+        # Exit 1 — CSV file does not exist.
+        code = main(["--csv", str(tmp_path / "missing.csv"), "--db", str(tmp_db)])
+        assert code == 1
+
+    def test_exit_1_db_not_found(self, tmp_path):
+        # Exit 1 — DB file does not exist.
+        csv_path = _write_csv(tmp_path / "in.csv", [_base_row()])
+        code = main(["--csv", str(csv_path), "--db", str(tmp_path / "missing.db")])
+        assert code == 1
+
+    def test_exit_2_on_row_errors(self, tmp_path, tmp_db):
+        # Exit 2 — some rows had errors (unknown TIPO), script still finished.
+        csv_path = _write_csv(
+            tmp_path / "in.csv",
+            [
+                _base_row(CODIGO="OK-1"),
+                _base_row(CODIGO="BAD-1", TIPO="UNKNOWN_TYPE_XYZ"),
+            ],
+        )
+        code = main(["--csv", str(csv_path), "--db", str(tmp_db)])
+        assert code == 2
+
+
+class TestM1AuditTimestampConsistency:
+    """M1 fix: audit_logs.timestamp must match fixed_assets.created_at (batch co-timestamping)."""
+
+    def test_audit_timestamp_matches_asset_created_at(self, tmp_path, tmp_db):
+        csv_path = _write_csv(
+            tmp_path / "in.csv",
+            [_base_row(CODIGO="TS-1"), _base_row(CODIGO="TS-2")],
+        )
+        run_import(csv_path, tmp_db, dry_run=False)
+
+        engine = create_engine(f"sqlite:///{tmp_db}")
+        with engine.connect() as conn:
+            assets = conn.execute(select(fixed_assets)).fetchall()
+            logs = conn.execute(
+                select(audit_logs).where(audit_logs.c.entity_type == "asset")
+            ).fetchall()
+        engine.dispose()
+
+        asset_created_ats = {dict(a._mapping)["created_at"] for a in assets}
+        log_timestamps = {dict(log._mapping)["timestamp"] for log in logs}
+
+        # All assets share the same created_at (batch start time).
+        assert len(asset_created_ats) == 1
+        # All audit entries share the same timestamp.
+        assert len(log_timestamps) == 1
+        # Both are the same value.
+        assert asset_created_ats == log_timestamps
+
+
+class TestH2NormalizedCodigoInErrors:
+    """H2 fix: CODIGO error reporting handles trailing-space headers."""
+
+    def test_error_shows_code_with_trailing_space_header(self, tmp_path, tmp_db):
+        # Simulate a CSV where the CODIGO header has a trailing space, as seen
+        # in Excel exports like "DESCRIPCION " and "VALOR ".
+        # The _write_csv helper uses `row.get(h, "")` so the row dict must also
+        # use the spaced key to produce a non-empty cell value.
+        headers_with_space = [h if h != "CODIGO" else "CODIGO " for h in CSV_HEADERS]
+        row = _base_row(TIPO="UNKNOWN_XYZ")
+        row.pop("CODIGO")
+        row["CODIGO "] = "SPACE-001"  # matches the spaced header for csv cell value
+        csv_path = _write_csv(
+            tmp_path / "in.csv",
+            [row],
+            headers=headers_with_space,
+        )
+        report = run_import(csv_path, tmp_db, dry_run=True)
+        assert len(report.errors) == 1
+        # Code must be resolved to "SPACE-001", not "?"
+        assert report.errors[0][1] == "SPACE-001"

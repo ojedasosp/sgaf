@@ -10,7 +10,7 @@ Endpoints:
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from flask import Blueprint, make_response, request, jsonify
+from flask import Blueprint, jsonify, make_response, request
 from sqlalchemy import select, update
 
 from app.database import get_db
@@ -97,16 +97,31 @@ def _build_per_asset_pdf(conn, asset_id: int, period_month: int, period_year: in
     historical_cost = from_db_string(asset["historical_cost"])
     salvage_value = from_db_string(asset["salvage_value"])
     useful_life = asset["useful_life_months"]
+    asset_method = asset["depreciation_method"]
+
+    additions = (
+        from_db_string(asset["additions_improvements"])
+        if asset.get("additions_improvements")
+        else None
+    )
+    starting_accumulated = (
+        from_db_string(asset["imported_accumulated_depreciation"])
+        if asset.get("imported_accumulated_depreciation")
+        else None
+    )
 
     engine = DepreciationEngine()
     schedule = []
+    # TERRENOS (method="none", useful_life=0) produce an empty schedule — no depreciation periods.
     for period_num in range(1, useful_life + 1):
         result = engine.calculate_period(
             historical_cost=historical_cost,
             salvage_value=salvage_value,
             useful_life_months=useful_life,
-            method=asset["depreciation_method"],
+            method=asset_method,
             period_number=period_num,
+            additions_improvements=additions,
+            imported_accumulated_depreciation=starting_accumulated,
         )
         schedule.append(
             {
@@ -117,12 +132,18 @@ def _build_per_asset_pdf(conn, asset_id: int, period_month: int, period_year: in
             }
         )
 
+    # Use effective_cost as the cost displayed in the PDF header so it matches the
+    # depreciation schedule (which is calculated on historical_cost + additions).
+    effective_cost_for_pdf = (
+        historical_cost + additions if additions is not None else historical_cost
+    )
+
     asset_dict = {
         "code": asset["code"],
         "description": asset["description"],
         "category": asset["category"],
-        "depreciation_method": asset["depreciation_method"],
-        "historical_cost": historical_cost,
+        "depreciation_method": asset_method,
+        "historical_cost": effective_cost_for_pdf,
         "salvage_value": salvage_value,
         "useful_life_months": useful_life,
     }

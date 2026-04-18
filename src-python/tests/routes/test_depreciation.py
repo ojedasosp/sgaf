@@ -701,3 +701,215 @@ class TestGetAssetHistoryImmutability:
             headers=headers,
         )
         assert resp.get_json()["total"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TestTerrenosDepreciation (AC6 — H1 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestTerrenosDepreciation:
+    """AC6: TERRENOS (method='none', useful_life_months=0) produce zero depreciation rows."""
+
+    def test_terrenos_produces_zero_depreciation_row(self, test_client, auth_token, test_engine):
+        """TERRENOS asset is included in the period with all-zero monetary amounts."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(
+                conn,
+                code="TER-001",
+                description="Terreno Planta Norte",
+                historical_cost="500000.0000",
+                salvage_value="0.0000",
+                depreciation_method="none",
+                useful_life_months=0,
+                acquisition_date="2024-01-01",
+            )
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        resp = test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["total"] == 1
+
+        row = body["data"][0]
+        assert row["asset_id"] == asset_id
+        assert row["depreciation_amount"] == "0.0000"
+        assert row["accumulated_depreciation"] == "0.0000"
+        assert row["book_value"] == "500000.0000"
+
+    def test_terrenos_included_many_periods_after_acquisition(
+        self, test_client, auth_token, test_engine
+    ):
+        """TERRENOS is not bounded by useful_life — it appears in every period after acquisition."""
+        with test_engine.connect() as conn:
+            _insert_asset(
+                conn,
+                code="TER-002",
+                historical_cost="200000.0000",
+                salvage_value="0.0000",
+                depreciation_method="none",
+                useful_life_months=0,
+                acquisition_date="2020-01-01",
+            )
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        # Period far beyond any "useful life" boundary — should still appear
+        resp = test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 12, "period_year": 2030},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["total"] == 1
+        row = body["data"][0]
+        assert row["depreciation_amount"] == "0.0000"
+        assert row["book_value"] == "200000.0000"
+
+    def test_terrenos_not_included_before_acquisition(
+        self, test_client, auth_token, test_engine
+    ):
+        """TERRENOS is skipped if the period predates its acquisition date."""
+        with test_engine.connect() as conn:
+            _insert_asset(
+                conn,
+                code="TER-003",
+                historical_cost="300000.0000",
+                salvage_value="0.0000",
+                depreciation_method="none",
+                useful_life_months=0,
+                acquisition_date="2025-06-01",
+            )
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        # Period before acquisition
+        resp = test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 1, "period_year": 2025},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# TestImportedAssetDepreciation (AC7 — H2 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestImportedAssetDepreciation:
+    """AC7: Assets with imported_accumulated_depreciation and additions_improvements
+    produce correctly offset accumulated_depreciation and book_value in the trigger."""
+
+    def test_imported_accumulated_depreciation_offsets_result(
+        self, test_client, auth_token, test_engine
+    ):
+        """imported_accumulated_depreciation shifts accumulated and book_value without
+        changing the monthly_charge (monthly depreciation amount)."""
+        # Straight-line asset: cost=120000, salvage=0, life=120 months
+        # monthly_charge = 120000/120 = 1000.0000
+        # Period 1: accumulated_from_engine = 1000.0000
+        # With imported_accumulated = 60000: total_accumulated = 61000.0000
+        # book_value = 120000 - 61000 = 59000.0000
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(
+                conn,
+                code="IMP-001",
+                historical_cost="120000.0000",
+                salvage_value="0.0000",
+                useful_life_months=120,
+                depreciation_method="straight_line",
+                acquisition_date="2025-03-01",
+                imported_accumulated_depreciation="60000.0000",
+            )
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        resp = test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},  # period_number=1
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["total"] == 1
+
+        row = body["data"][0]
+        assert row["asset_id"] == asset_id
+        assert row["depreciation_amount"] == "1000.0000"          # monthly_charge unchanged
+        assert row["accumulated_depreciation"] == "61000.0000"    # 60000 + 1000
+        assert row["book_value"] == "59000.0000"                  # 120000 - 61000
+
+    def test_additions_improvements_extend_depreciable_base(
+        self, test_client, auth_token, test_engine
+    ):
+        """additions_improvements increase the effective_cost and monthly_charge."""
+        # Straight-line: cost=100000, additions=20000 → effective=120000, salvage=0, life=120
+        # monthly_charge = 120000/120 = 1000.0000
+        # Period 1: accumulated=1000.0000, book_value=119000.0000
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(
+                conn,
+                code="IMP-002",
+                historical_cost="100000.0000",
+                salvage_value="0.0000",
+                useful_life_months=120,
+                depreciation_method="straight_line",
+                acquisition_date="2025-03-01",
+                additions_improvements="20000.0000",
+            )
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        resp = test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["total"] == 1
+
+        row = body["data"][0]
+        assert row["asset_id"] == asset_id
+        assert row["depreciation_amount"] == "1000.0000"    # based on effective_cost 120000
+        assert row["accumulated_depreciation"] == "1000.0000"
+        assert row["book_value"] == "119000.0000"           # 120000 - 1000
+
+    def test_both_imported_fields_combined(self, test_client, auth_token, test_engine):
+        """Both imported_accumulated and additions_improvements work correctly together."""
+        # effective_cost = 100000 + 20000 = 120000, life=120, salvage=0
+        # monthly_charge = 1000.0000
+        # Period 1: engine accumulated = 1000; with import offset = 60000 + 1000 = 61000
+        # book_value = 120000 - 61000 = 59000
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(
+                conn,
+                code="IMP-003",
+                historical_cost="100000.0000",
+                salvage_value="0.0000",
+                useful_life_months=120,
+                depreciation_method="straight_line",
+                acquisition_date="2025-03-01",
+                additions_improvements="20000.0000",
+                imported_accumulated_depreciation="60000.0000",
+            )
+
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        resp = test_client.post(
+            "/api/v1/depreciation/",
+            json={"period_month": 3, "period_year": 2025},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["total"] == 1
+
+        row = body["data"][0]
+        assert row["asset_id"] == asset_id
+        assert row["depreciation_amount"] == "1000.0000"
+        assert row["accumulated_depreciation"] == "61000.0000"
+        assert row["book_value"] == "59000.0000"

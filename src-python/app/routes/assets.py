@@ -139,6 +139,7 @@ def get_asset(asset_id: int):
 
 _EDITABLE_FIELDS = frozenset(
     {
+        # Original editable fields
         "code",
         "description",
         "category",
@@ -147,7 +148,23 @@ _EDITABLE_FIELDS = frozenset(
         "useful_life_months",
         "acquisition_date",
         "depreciation_method",
+        # Import fields (Story 8.5)
+        "imported_accumulated_depreciation",
+        "additions_improvements",
+        "accounting_code",
+        "cost_center",
+        "supplier",
+        "invoice_number",
+        "location",
+        "characteristics",
     }
+)
+
+_NULLABLE_MONETARY_IMPORT_FIELDS = frozenset(
+    {"imported_accumulated_depreciation", "additions_improvements"}
+)
+_NULLABLE_TEXT_IMPORT_FIELDS = frozenset(
+    {"accounting_code", "cost_center", "supplier", "invoice_number", "location", "characteristics"}
 )
 
 
@@ -156,6 +173,7 @@ _EDITABLE_FIELDS = frozenset(
 def update_asset(asset_id: int):
     """PATCH /api/v1/assets/<asset_id> — Partial update of an asset's editable fields.
 
+    Accepts original 8 fields plus 8 import fields added in Story 8.5.
     Only fields present in the request body are validated and updated.
     AuditLogger records one entry per changed field (fields with no change are skipped).
     actor = company_name from app_config (trimmed).
@@ -237,6 +255,23 @@ def update_asset(asset_id: int):
                 if new_str != old_str:
                     updates[field] = new_str
                     changes.append((field, old_str, new_str))
+            elif field in _NULLABLE_MONETARY_IMPORT_FIELDS:
+                # Nullable monetary — store as D3 TEXT or NULL
+                if new_val is None or str(new_val).strip() == "":
+                    new_stored: str | None = None
+                else:
+                    new_stored = to_db_string(Decimal(str(new_val)))
+                old_stored: str | None = current.get(field)
+                if new_stored != old_stored:
+                    updates[field] = new_stored
+                    changes.append((field, old_stored or "", new_stored or ""))
+            elif field in _NULLABLE_TEXT_IMPORT_FIELDS:
+                # Nullable text — store as stripped string or NULL
+                new_stored = str(new_val).strip() if new_val and str(new_val).strip() else None
+                old_stored = current.get(field)
+                if new_stored != old_stored:
+                    updates[field] = new_stored
+                    changes.append((field, old_stored or "", new_stored or ""))
             else:
                 new_str = str(new_val).strip() if field != "acquisition_date" else str(new_val)
                 old_str = current[field]

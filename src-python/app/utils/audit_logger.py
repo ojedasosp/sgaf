@@ -43,6 +43,7 @@ class AuditLogger:
         new_value: str | None = None,
         actor: str = "system",
         conn: Connection | None = None,
+        timestamp: str | None = None,
     ) -> None:
         """Write an immutable audit entry.
 
@@ -56,8 +57,13 @@ class AuditLogger:
             actor: Who performed the action (default "system" for MVP).
             conn: Optional externally managed connection. When provided the
                 INSERT runs on this connection without committing.
+            timestamp: ISO 8601 UTC timestamp string. Auto-generated when None.
+                Pass an explicit value from the caller to co-timestamp a batch
+                of audit entries (e.g., CSV import where all entries should share
+                the batch start time — Task 5.5, Story 8.3).
         """
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         stmt = insert(audit_logs).values(
             timestamp=timestamp,
             actor=actor,

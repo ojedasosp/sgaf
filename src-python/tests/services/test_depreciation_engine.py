@@ -327,3 +327,260 @@ class TestValidation:
         """L1: bool useful_life_months must also be rejected."""
         with pytest.raises(TypeError, match="useful_life_months must be int"):
             engine.calculate_period(COST, SALVAGE, True, "straight_line", 1)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+class TestLegacyImportCases:
+    """AC-1/2/3/4 (Story 8.4): imported_accumulated_depreciation, additions_improvements,
+    method='none' (TERRENOS), and regression guard for native assets.
+    """
+
+    # ── AC1: imported_accumulated_depreciation offsets accumulated and book_value ──
+
+    def test_imported_accumulated_offsets_period_1(self, engine):
+        """AC1 — period 1 accumulated and NBV include the import offset."""
+        result = engine.calculate_period(
+            Decimal("100000"),
+            Decimal("0"),
+            120,
+            "straight_line",
+            1,
+            imported_accumulated_depreciation=Decimal("50000"),
+        )
+        assert result["monthly_charge"] == Decimal("833.3333"), (
+            f"monthly_charge wrong: {result['monthly_charge']}"
+        )
+        assert result["accumulated_depreciation"] == Decimal("50833.3333"), (
+            f"accumulated wrong: {result['accumulated_depreciation']}"
+        )
+        assert result["net_book_value"] == Decimal("49166.6667"), (
+            f"net_book_value wrong: {result['net_book_value']}"
+        )
+
+    def test_imported_accumulated_offsets_period_2(self, engine):
+        """AC1 — period 2 still offsets by the same starting base."""
+        result = engine.calculate_period(
+            Decimal("100000"),
+            Decimal("0"),
+            120,
+            "straight_line",
+            2,
+            imported_accumulated_depreciation=Decimal("50000"),
+        )
+        assert result["monthly_charge"] == Decimal("833.3333")
+        assert result["accumulated_depreciation"] == Decimal("51666.6666")
+        assert result["net_book_value"] == Decimal("48333.3334")
+
+    def test_imported_accumulated_monthly_charge_unchanged(self, engine):
+        """AC1 — monthly_charge is the same as without the import offset."""
+        no_offset = engine.calculate_period(
+            Decimal("100000"), Decimal("0"), 120, "straight_line", 5
+        )
+        with_offset = engine.calculate_period(
+            Decimal("100000"),
+            Decimal("0"),
+            120,
+            "straight_line",
+            5,
+            imported_accumulated_depreciation=Decimal("50000"),
+        )
+        assert with_offset["monthly_charge"] == no_offset["monthly_charge"]
+
+    def test_imported_accumulated_none_equivalent_to_zero(self, engine):
+        """AC4 — passing None is identical to passing Decimal('0')."""
+        result_none = engine.calculate_period(
+            COST, SALVAGE, LIFE, "straight_line", 1, imported_accumulated_depreciation=None
+        )
+        result_zero = engine.calculate_period(
+            COST, SALVAGE, LIFE, "straight_line", 1, imported_accumulated_depreciation=Decimal("0")
+        )
+        assert result_none == result_zero
+
+    # ── AC2: additions_improvements extends the depreciable base ──
+
+    def test_additions_extend_depreciable_base_straight_line(self, engine):
+        """AC2 — effective_cost = historical_cost + additions; charge reflects the larger base."""
+        result = engine.calculate_period(
+            Decimal("100000"),
+            Decimal("0"),
+            60,
+            "straight_line",
+            1,
+            additions_improvements=Decimal("10000"),
+        )
+        # effective_cost = 110000; monthly = 110000/60 = 1833.3333
+        assert result["monthly_charge"] == Decimal("1833.3333"), (
+            f"monthly_charge wrong: {result['monthly_charge']}"
+        )
+        assert result["accumulated_depreciation"] == Decimal("1833.3333")
+        assert result["net_book_value"] == Decimal("108166.6667")
+
+    def test_additions_and_imported_accumulated_combined(self, engine):
+        """AC1+AC2 — both fields in effect simultaneously."""
+        result = engine.calculate_period(
+            Decimal("100000"),
+            Decimal("0"),
+            60,
+            "straight_line",
+            1,
+            additions_improvements=Decimal("10000"),
+            imported_accumulated_depreciation=Decimal("5000"),
+        )
+        # effective_cost = 110000; charge = 1833.3333; total_acc = 5000 + 1833.3333
+        assert result["monthly_charge"] == Decimal("1833.3333")
+        assert result["accumulated_depreciation"] == Decimal("6833.3333")
+        assert result["net_book_value"] == Decimal("103166.6667")
+
+    def test_additions_none_equivalent_to_zero(self, engine):
+        """AC4 — passing additions_improvements=None is identical to not passing it."""
+        result_none = engine.calculate_period(
+            COST, SALVAGE, LIFE, "sum_of_digits", 1, additions_improvements=None
+        )
+        result_omit = engine.calculate_period(COST, SALVAGE, LIFE, "sum_of_digits", 1)
+        assert result_none == result_omit
+
+    def test_additions_declining_balance_uses_effective_cost(self, engine):
+        """AC2 — declining balance opening NBV and rate use effective_cost."""
+        result_no_add = engine.calculate_period(
+            Decimal("10000"), Decimal("0"), 60, "declining_balance", 1
+        )
+        result_with_add = engine.calculate_period(
+            Decimal("10000"),
+            Decimal("0"),
+            60,
+            "declining_balance",
+            1,
+            additions_improvements=Decimal("5000"),
+        )
+        # effective_cost = 15000; double-declining rate R = 2/60; charge = 15000 * (2/60)
+        expected_charge = (Decimal("15000") * Decimal("2") / Decimal("60")).quantize(
+            Decimal("0.0001")
+        )
+        assert result_with_add["monthly_charge"] == expected_charge, (
+            f"Expected {expected_charge}, got {result_with_add['monthly_charge']}"
+        )
+        # Charge must be larger than without improvements
+        assert result_with_add["monthly_charge"] > result_no_add["monthly_charge"]
+
+    # ── AC3: method="none" (TERRENOS) ──
+
+    def test_terrenos_returns_zero_depreciation(self, engine):
+        """AC3 — method='none' always returns zero depreciation."""
+        result = engine.calculate_period(Decimal("50000"), Decimal("0"), 0, "none", 1)
+        assert result["monthly_charge"] == Decimal("0.0000")
+        assert result["accumulated_depreciation"] == Decimal("0.0000")
+        assert result["net_book_value"] == Decimal("50000.0000")
+
+    def test_terrenos_book_value_is_historical_cost(self, engine):
+        """AC3 — book_value == historical_cost for any period."""
+        cost = Decimal("125000.5000")
+        result = engine.calculate_period(cost, Decimal("0"), 0, "none", 99)
+        assert result["net_book_value"] == cost.quantize(Decimal("0.0001"))
+
+    def test_terrenos_skips_validate_useful_life_zero(self, engine):
+        """AC3 — useful_life_months=0 does NOT raise for method='none'."""
+        # Would raise ValueError("useful_life_months must be >= 1") for any other method
+        result = engine.calculate_period(Decimal("1000"), Decimal("0"), 0, "none", 1)
+        assert result["monthly_charge"] == Decimal("0.0000")
+
+    def test_none_in_valid_methods_constant(self):
+        """AC3 — VALID_METHODS constant includes 'none' for external validator use."""
+        from app.services.depreciation_engine import VALID_METHODS
+
+        assert "none" in VALID_METHODS
+
+    # ── AC4: regression — native SGAF assets (no import fields) unchanged ──
+
+    def test_native_asset_no_regression_straight_line(self, engine):
+        """AC4 — 5-positional-arg call returns bit-identical results to pre-story values."""
+        result = engine.calculate_period(COST, SALVAGE, LIFE, "straight_line", 1)
+        assert result["monthly_charge"] == Decimal("150.0000")
+        assert result["accumulated_depreciation"] == Decimal("150.0000")
+        assert result["net_book_value"] == Decimal("9850.0000")
+
+    def test_native_asset_no_regression_sum_of_digits(self, engine):
+        """AC4 — sum_of_digits period-1 reference value unchanged."""
+        result = engine.calculate_period(COST, SALVAGE, LIFE, "sum_of_digits", 1)
+        # digit_1 / total_sod * depreciable_base = 60/1830 * 9000 = 295.0816...
+        total_sod = Decimal("60") * Decimal("61") / Decimal("2")
+        expected = (Decimal("60") / total_sod * Decimal("9000")).quantize(
+            Decimal("0.0001"), rounding=__import__("decimal").ROUND_HALF_UP
+        )
+        assert result["monthly_charge"] == expected
+
+    def test_native_asset_no_regression_declining_balance(self, engine):
+        """AC4 — declining balance final period still closes at salvage value."""
+        result = engine.calculate_period(COST, SALVAGE, LIFE, "declining_balance", LIFE)
+        assert result["net_book_value"] == Decimal("1000.0000")
+        assert result["accumulated_depreciation"] == Decimal("9000.0000")
+
+    def test_native_asset_full_schedule_sum_straight_line(self, engine):
+        """AC4 — full straight_line schedule total is still exactly depreciable_base."""
+        schedule = full_schedule(engine, COST, SALVAGE, LIFE, "straight_line")
+        total = sum((r["monthly_charge"] for r in schedule), Decimal("0"))
+        assert total == DEPRECIABLE_BASE
+
+    # ── H3: type validation for optional import fields ──
+
+    def test_type_error_on_int_additions_improvements(self, engine):
+        """H3 — passing int for additions_improvements raises TypeError."""
+        with pytest.raises(TypeError, match="additions_improvements must be Decimal"):
+            engine.calculate_period(COST, SALVAGE, LIFE, "straight_line", 1,
+                                    additions_improvements=1000)
+
+    def test_type_error_on_float_additions_improvements(self, engine):
+        """H3 — passing float for additions_improvements raises TypeError."""
+        with pytest.raises(TypeError, match="additions_improvements must be Decimal"):
+            engine.calculate_period(COST, SALVAGE, LIFE, "straight_line", 1,
+                                    additions_improvements=1000.0)
+
+    def test_type_error_on_int_imported_accumulated(self, engine):
+        """H3 — passing int for imported_accumulated_depreciation raises TypeError."""
+        with pytest.raises(TypeError, match="imported_accumulated_depreciation must be Decimal"):
+            engine.calculate_period(COST, SALVAGE, LIFE, "straight_line", 1,
+                                    imported_accumulated_depreciation=5000)
+
+    def test_type_error_on_float_imported_accumulated(self, engine):
+        """H3 — passing float for imported_accumulated_depreciation raises TypeError."""
+        with pytest.raises(TypeError, match="imported_accumulated_depreciation must be Decimal"):
+            engine.calculate_period(COST, SALVAGE, LIFE, "straight_line", 1,
+                                    imported_accumulated_depreciation=5000.0)
+
+    # ── M2: salvage_value check uses effective_cost (historical + additions) ──
+
+    def test_salvage_within_effective_cost_is_valid(self, engine):
+        """M2 — salvage > historical_cost but <= effective_cost (cost+additions) is valid."""
+        # historical_cost=100000, additions=20000 → effective=120000; salvage=110000 <= 120000
+        result = engine.calculate_period(
+            Decimal("100000"),
+            Decimal("110000"),
+            60,
+            "straight_line",
+            1,
+            additions_improvements=Decimal("20000"),
+        )
+        # depreciable_base = 120000 - 110000 = 10000; monthly = 10000/60
+        assert result["monthly_charge"] > Decimal("0")
+
+    def test_salvage_above_effective_cost_raises(self, engine):
+        """M2 — salvage > effective_cost (historical + additions) raises ValueError."""
+        with pytest.raises(ValueError, match="effective_cost"):
+            engine.calculate_period(
+                Decimal("100000"),
+                Decimal("130000"),
+                60,
+                "straight_line",
+                1,
+                additions_improvements=Decimal("20000"),
+            )
+
+    def test_salvage_above_historical_no_additions_still_raises(self, engine):
+        """M2 — without additions, salvage > historical_cost raises with 'historical_cost' label."""
+        with pytest.raises(ValueError, match="historical_cost"):
+            engine.calculate_period(
+                Decimal("100000"),
+                Decimal("110000"),
+                60,
+                "straight_line",
+                1,
+            )

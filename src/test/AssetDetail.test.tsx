@@ -74,6 +74,15 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
     retirement_date: null,
     created_at: "2026-03-09T14:00:00Z",
     updated_at: "2026-03-09T14:00:00Z",
+    // import fields — null by default (Story 8.5)
+    imported_accumulated_depreciation: null,
+    additions_improvements: null,
+    accounting_code: null,
+    cost_center: null,
+    supplier: null,
+    invoice_number: null,
+    location: null,
+    characteristics: null,
     ...overrides,
   };
 }
@@ -334,9 +343,9 @@ describe("AssetDetail — edit mode (AC2, AC3)", () => {
     // Edit form is shown
     expect(screen.getByText("Editar Activo")).toBeInTheDocument();
     // Fields pre-populated
-    expect((screen.getByLabelText(/Código/i) as HTMLInputElement).value).toBe(
-      "LAP-001",
-    );
+    expect(
+      (screen.getByLabelText(/^Código \*/i) as HTMLInputElement).value,
+    ).toBe("LAP-001");
     expect(
       (screen.getByLabelText(/Descripción/i) as HTMLInputElement).value,
     ).toBe("HP Laptop 14 pulgadas");
@@ -437,7 +446,7 @@ describe("AssetDetail — edit mode (AC2, AC3)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
 
     // Clear code field and submit
-    const codeInput = screen.getByLabelText(/Código/i);
+    const codeInput = screen.getByLabelText(/^Código \*/i);
     await userEvent.clear(codeInput);
     await userEvent.click(
       screen.getByRole("button", { name: "Guardar Cambios" }),
@@ -711,6 +720,248 @@ describe("AssetDetail — delete flow (AC5, AC6, AC8)", () => {
     await waitFor(() => screen.getByText("Retirado"));
     expect(
       screen.queryByRole("button", { name: "Eliminar" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 8.5 — Import section view mode tests
+// ---------------------------------------------------------------------------
+
+describe("AssetDetail — import section (view mode)", () => {
+  it("shows 'Datos de Importación / Contables' toggle button (AC1)", async () => {
+    mockAssetAndAudit(makeAsset());
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+    expect(
+      screen.getByRole("button", { name: /Datos de Importación \/ Contables/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("import section expands on click and shows field rows (AC1)", async () => {
+    mockAssetAndAudit(makeAsset());
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    const toggleBtn = screen.getByRole("button", {
+      name: /Datos de Importación \/ Contables/i,
+    });
+    await userEvent.click(toggleBtn);
+
+    expect(screen.getByText("Depreciación Acumulada al Importar")).toBeInTheDocument();
+    expect(screen.getByText("Adiciones y Mejoras")).toBeInTheDocument();
+    expect(screen.getByText("Código Contable (PUC)")).toBeInTheDocument();
+    expect(screen.getByText("Centro de Costo")).toBeInTheDocument();
+    expect(screen.getByText("Proveedor")).toBeInTheDocument();
+    expect(screen.getByText("Factura")).toBeInTheDocument();
+    expect(screen.getByText("Ubicación")).toBeInTheDocument();
+    expect(screen.getByText("Características")).toBeInTheDocument();
+  });
+
+  it("shows dashes for native asset with no import fields (AC1)", async () => {
+    mockAssetAndAudit(makeAsset()); // all import fields null
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    const toggleBtn = screen.getByRole("button", {
+      name: /Datos de Importación \/ Contables/i,
+    });
+    await userEvent.click(toggleBtn);
+
+    // After expanding, fields with null show "—"
+    const dashes = screen.getAllByText("—");
+    expect(dashes.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("shows import field values for an imported asset (AC1)", async () => {
+    mockAssetAndAudit(
+      makeAsset({
+        imported_accumulated_depreciation: "50000.0000",
+        accounting_code: "1524",
+        supplier: "Proveedor SA",
+      }),
+    );
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    const toggleBtn = screen.getByRole("button", {
+      name: /Datos de Importación \/ Contables/i,
+    });
+    await userEvent.click(toggleBtn);
+
+    expect(screen.getByText("50000.0000")).toBeInTheDocument();
+    expect(screen.getByText("1524")).toBeInTheDocument();
+    expect(screen.getByText("Proveedor SA")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 8.5 — Import section edit mode tests
+// ---------------------------------------------------------------------------
+
+describe("AssetDetail — import section (edit mode)", () => {
+  it("shows import section heading in edit form (AC2)", async () => {
+    mockAssetAndAudit(makeAsset());
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Datos de Importación / Contables" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows impact warning text for imported_accumulated_depreciation (AC3)", async () => {
+    mockAssetAndAudit(makeAsset());
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    expect(
+      screen.getByText(/Modificar este valor recalculará el valor en libros/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows impact warning text for additions_improvements (AC3)", async () => {
+    mockAssetAndAudit(makeAsset());
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    expect(
+      screen.getByText(/Modificar afecta la base depreciable/i),
+    ).toBeInTheDocument();
+  });
+
+  it("cross-field validation blocks save when IAD > effective_cost (AC5)", async () => {
+    mockAssetAndAudit(makeAsset({ historical_cost: "100000.0000" }));
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    const iadInput = screen.getByLabelText("Depreciación Acumulada al Importar");
+    await userEvent.clear(iadInput);
+    await userEvent.type(iadInput, "200000");
+    // trigger blur to show error
+    await userEvent.tab();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/No puede superar el costo efectivo/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("triggers confirm dialog when IAD is changed on submit (AC4)", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockAssetAndAudit(makeAsset({ historical_cost: "100000.0000" }));
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    const iadInput = screen.getByLabelText("Depreciación Acumulada al Importar");
+    await userEvent.clear(iadInput);
+    await userEvent.type(iadInput, "5000");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar Cambios" }),
+    );
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining("afectan los cálculos de depreciación"),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("does NOT trigger confirm dialog for text-only import field changes (AC4)", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const updatedAsset = makeAsset({ accounting_code: "1524" });
+    mockAssetAndAudit(makeAsset());
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    const acInput = screen.getByLabelText("Código Contable (PUC)");
+    await userEvent.type(acInput, "1524");
+
+    // Mock PATCH + refetch
+    mockFetchResponse({ data: updatedAsset });
+    mockFetchResponse({ data: updatedAsset });
+    mockFetchResponse({ data: [], total: 0 });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar Cambios" }),
+    );
+
+    // confirm should NOT have been called (text-only field change)
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 8.5 — TERRENOS (method="none") display tests
+// ---------------------------------------------------------------------------
+
+describe("AssetDetail — TERRENOS (method=none)", () => {
+  it('shows "Sin Depreciación (Terrenos)" as method label in view mode (AC7)', async () => {
+    mockAssetAndAudit(
+      makeAsset({
+        depreciation_method: "none",
+        useful_life_months: 0,
+      }),
+    );
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    expect(
+      screen.getByText("Sin Depreciación (Terrenos)"),
+    ).toBeInTheDocument();
+  });
+
+  it("TERRENOS edit form shows 'none' option in method select (AC7)", async () => {
+    mockAssetAndAudit(
+      makeAsset({ depreciation_method: "none", useful_life_months: 0 }),
+    );
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    const select = screen.getByLabelText(/Método de Depreciación/i);
+    expect(select).toHaveValue("none");
+    // The 'none' option is available
+    const noneOption = screen.getByRole("option", {
+      name: "Sin Depreciación (Terrenos)",
+    });
+    expect(noneOption).toBeInTheDocument();
+  });
+
+  it("TERRENOS useful_life_months=0 does not show validation error in edit mode (AC7)", async () => {
+    mockAssetAndAudit(
+      makeAsset({ depreciation_method: "none", useful_life_months: 0 }),
+    );
+    renderAssetDetail();
+    await waitFor(() => screen.getAllByText("LAP-001").length > 0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    // Trigger blur on useful_life_months field — no error should appear
+    const lifeInput = screen.getByLabelText(/Vida Útil \(meses\)/i);
+    expect(lifeInput).toHaveValue(0);
+    await userEvent.click(lifeInput);
+    await userEvent.tab();
+
+    // No useful_life error message
+    expect(
+      screen.queryByText(/La vida útil debe ser mayor/i),
     ).not.toBeInTheDocument();
   });
 });

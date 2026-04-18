@@ -762,6 +762,199 @@ class TestUpdateAsset:
 
 
 # ---------------------------------------------------------------------------
+# PATCH /api/v1/assets/<asset_id> — import fields (Story 8.5)
+# ---------------------------------------------------------------------------
+
+
+class TestPatchImportFields:
+    """Tests for PATCH with import fields introduced in Story 8.5."""
+
+    def test_patch_text_import_fields_updates_and_audits(
+        self, test_client, auth_token, test_engine
+    ):
+        """PATCH with text import fields persists values and writes one audit entry each."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        payload = {
+            "accounting_code": "1524",
+            "cost_center": "CC-01",
+            "supplier": "Proveedor SA",
+            "invoice_number": "FAC-001",
+            "location": "Oficina 201",
+            "characteristics": "Portatil 15",
+        }
+        resp = _patch_asset(test_client, asset_id, payload, auth_token)
+        assert resp.status_code == 200
+        asset = resp.get_json()["data"]
+        assert asset["accounting_code"] == "1524"
+        assert asset["cost_center"] == "CC-01"
+        assert asset["supplier"] == "Proveedor SA"
+        assert asset["invoice_number"] == "FAC-001"
+        assert asset["location"] == "Oficina 201"
+        assert asset["characteristics"] == "Portatil 15"
+        # Verify audit entries — one per changed field
+        with test_engine.connect() as conn:
+            logs = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.entity_type == "asset",
+                    audit_logs.c.entity_id == asset_id,
+                    audit_logs.c.action == "UPDATE",
+                )
+            ).fetchall()
+        audit_fields = {log.field for log in logs}
+        for field in payload:
+            assert field in audit_fields, f"No audit entry for field: {field}"
+
+    def test_patch_imported_accumulated_depreciation_stored_as_d3(
+        self, test_client, auth_token, test_engine
+    ):
+        """imported_accumulated_depreciation is stored as D3 TEXT (4 decimal places)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", historical_cost="100000.0000")
+        resp = _patch_asset(
+            test_client, asset_id, {"imported_accumulated_depreciation": "50000"}, auth_token
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["imported_accumulated_depreciation"] == "50000.0000"
+
+    def test_patch_additions_improvements_stored_as_d3(
+        self, test_client, auth_token, test_engine
+    ):
+        """additions_improvements is stored as D3 TEXT (4 decimal places)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client, asset_id, {"additions_improvements": "10000.5"}, auth_token
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["additions_improvements"] == "10000.5000"
+
+    def test_patch_import_field_empty_string_clears_value(
+        self, test_client, auth_token, test_engine
+    ):
+        """Sending empty string for a text import field stores NULL in DB."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", accounting_code="OLD")
+        resp = _patch_asset(test_client, asset_id, {"accounting_code": ""}, auth_token)
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["accounting_code"] is None
+
+    def test_patch_import_field_none_clears_value(
+        self, test_client, auth_token, test_engine
+    ):
+        """Sending null for a monetary import field stores NULL in DB."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(
+                conn, code="LAP-001", imported_accumulated_depreciation="5000.0000"
+            )
+        resp = _patch_asset(
+            test_client, asset_id, {"imported_accumulated_depreciation": None}, auth_token
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["imported_accumulated_depreciation"] is None
+
+    def test_patch_cross_field_iad_exceeds_effective_cost_returns_400(
+        self, test_client, auth_token, test_engine
+    ):
+        """Cross-field validation rejects imported_accumulated_depreciation > effective_cost."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client,
+            asset_id,
+            {
+                "historical_cost": "100000",
+                "salvage_value": "0",
+                "imported_accumulated_depreciation": "200000",
+                "additions_improvements": "0",
+            },
+            auth_token,
+        )
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["error"] == "VALIDATION_ERROR"
+        assert body["field"] == "imported_accumulated_depreciation"
+
+    def test_patch_iad_negative_rejected(self, test_client, auth_token, test_engine):
+        """Negative imported_accumulated_depreciation is rejected with 400."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client, asset_id, {"imported_accumulated_depreciation": "-100"}, auth_token
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["field"] == "imported_accumulated_depreciation"
+
+    def test_patch_additions_negative_rejected(self, test_client, auth_token, test_engine):
+        """Negative additions_improvements is rejected with 400."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client, asset_id, {"additions_improvements": "-50"}, auth_token
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["field"] == "additions_improvements"
+
+    def test_patch_no_regression_original_fields(self, test_client, auth_token, test_engine):
+        """Original 8 PATCH fields still work identically after Story 8.5 changes (AC9)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client, asset_id, {"description": "Nueva descripción"}, auth_token
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["description"] == "Nueva descripción"
+
+    def test_patch_terrenos_method_none_accepted(self, test_client, auth_token, test_engine):
+        """PATCH with depreciation_method='none' and useful_life_months=0 is accepted (AC7)."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="TERRENO-001")
+        resp = _patch_asset(
+            test_client,
+            asset_id,
+            {"depreciation_method": "none", "useful_life_months": 0},
+            auth_token,
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["depreciation_method"] == "none"
+        assert data["useful_life_months"] == 0
+
+    def test_patch_useful_life_zero_without_none_method_rejected(
+        self, test_client, auth_token, test_engine
+    ):
+        """useful_life_months=0 is rejected when method is not 'none'."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001")
+        resp = _patch_asset(
+            test_client,
+            asset_id,
+            {"useful_life_months": 0, "depreciation_method": "straight_line"},
+            auth_token,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["field"] == "useful_life_months"
+
+    def test_patch_import_fields_audit_new_value(self, test_client, auth_token, test_engine):
+        """Audit log new_value for monetary import field reflects D3 representation."""
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(conn, code="LAP-001", historical_cost="100000.0000")
+        _patch_asset(
+            test_client, asset_id, {"imported_accumulated_depreciation": "25000"}, auth_token
+        )
+        with test_engine.connect() as conn:
+            log = conn.execute(
+                select(audit_logs).where(
+                    audit_logs.c.entity_id == asset_id,
+                    audit_logs.c.field == "imported_accumulated_depreciation",
+                )
+            ).fetchone()
+        assert log is not None
+        assert log.new_value == "25000.0000"
+        assert log.old_value == ""  # was NULL — stored as empty string in audit
+
+
+# ---------------------------------------------------------------------------
 # POST /api/v1/assets/<asset_id>/retire helpers
 # ---------------------------------------------------------------------------
 

@@ -159,16 +159,31 @@ def calculate_depreciation():
                 asset_dict["acquisition_date"], period_month, period_year
             )
 
-            # Skip assets not yet active or fully depreciated in this period
-            if period_number < 1 or period_number > asset_dict["useful_life_months"]:
+            # Skip assets not yet acquired in this period.
+            # TERRENOS (method="none", useful_life_months=0) are not bounded by useful_life —
+            # they are included in every period after acquisition with zero depreciation.
+            asset_method = asset_dict["depreciation_method"]
+            if period_number < 1:
+                continue
+            if asset_method != "none" and period_number > asset_dict["useful_life_months"]:
                 continue
 
             calc = engine.calculate_period(
                 historical_cost=from_db_string(asset_dict["historical_cost"]),
                 salvage_value=from_db_string(asset_dict["salvage_value"]),
                 useful_life_months=int(asset_dict["useful_life_months"]),
-                method=asset_dict["depreciation_method"],
+                method=asset_method,
                 period_number=period_number,
+                additions_improvements=(
+                    from_db_string(asset_dict["additions_improvements"])
+                    if asset_dict.get("additions_improvements")
+                    else None
+                ),
+                imported_accumulated_depreciation=(
+                    from_db_string(asset_dict["imported_accumulated_depreciation"])
+                    if asset_dict.get("imported_accumulated_depreciation")
+                    else None
+                ),
             )
 
             stmt = insert(depreciation_results).values(

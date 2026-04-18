@@ -7,7 +7,8 @@ export type AssetStatus = "active" | "in_maintenance" | "retired";
 export type DepreciationMethod =
   | "straight_line"
   | "sum_of_digits"
-  | "declining_balance";
+  | "declining_balance"
+  | "none"; // TERRENOS — no depreciation (Story 8.5)
 
 export interface Asset {
   asset_id: number;
@@ -23,6 +24,15 @@ export interface Asset {
   retirement_date: string | null;
   created_at: string; // ISO 8601 UTC
   updated_at: string; // ISO 8601 UTC
+  // Import fields — added by migration 009 (Story 8.1), editable per Story 8.5
+  imported_accumulated_depreciation: string | null; // Decimal string or null
+  additions_improvements: string | null; // Decimal string or null
+  accounting_code: string | null;
+  cost_center: string | null;
+  supplier: string | null;
+  invoice_number: string | null;
+  location: string | null;
+  characteristics: string | null;
 }
 
 export interface CreateAssetPayload {
@@ -36,7 +46,26 @@ export interface CreateAssetPayload {
   depreciation_method: DepreciationMethod;
 }
 
-export type UpdateAssetPayload = Partial<CreateAssetPayload>;
+export interface UpdateAssetPayload {
+  // Original editable fields (all optional for PATCH)
+  code?: string;
+  description?: string;
+  historical_cost?: string;
+  salvage_value?: string;
+  useful_life_months?: number;
+  acquisition_date?: string;
+  category?: string;
+  depreciation_method?: DepreciationMethod;
+  // Import fields (Story 8.5)
+  imported_accumulated_depreciation?: string | null;
+  additions_improvements?: string | null;
+  accounting_code?: string | null;
+  cost_center?: string | null;
+  supplier?: string | null;
+  invoice_number?: string | null;
+  location?: string | null;
+  characteristics?: string | null;
+}
 
 export interface RetireAssetPayload {
   retirement_date: string; // ISO 8601 date "YYYY-MM-DD"
