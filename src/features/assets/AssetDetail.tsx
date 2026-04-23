@@ -208,6 +208,12 @@ interface EditFormErrors {
   // Import field errors (Story 8.5)
   imported_accumulated_depreciation?: string;
   additions_improvements?: string;
+  accounting_code?: string;
+  cost_center?: string;
+  supplier?: string;
+  invoice_number?: string;
+  location?: string;
+  characteristics?: string;
 }
 
 function assetToFormValues(asset: Asset): EditFormValues {
