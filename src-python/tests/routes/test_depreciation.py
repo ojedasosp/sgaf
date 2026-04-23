@@ -81,7 +81,7 @@ def _insert_asset(conn, **overrides):
     defaults.update(overrides)
     result = conn.execute(insert(fixed_assets).values(**defaults))
     conn.commit()
-    return result.lastrowid
+    return result.inserted_primary_key[0]
 
 
 # ---------------------------------------------------------------------------

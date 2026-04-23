@@ -108,13 +108,26 @@ def validate_asset_create(data: dict[str, Any]) -> list[dict[str, str]]:
     else:
         try:
             useful_life_int = int(useful_life)
-            if useful_life_int <= 0:
+            if useful_life_int < 0:
                 errors.append(
                     {
                         "field": "useful_life_months",
-                        "message": "Useful life must be greater than 0",
+                        "message": "Useful life must be zero or greater",
                     }
                 )
+            elif useful_life_int == 0:
+                # 0 is only valid for TERRENOS (depreciation_method="none")
+                method = data.get("depreciation_method")
+                if method is not None and str(method).strip() != "none":
+                    errors.append(
+                        {
+                            "field": "useful_life_months",
+                            "message": (
+                                "Useful life must be greater than 0 "
+                                "for this depreciation method"
+                            ),
+                        }
+                    )
         except (ValueError, TypeError):
             errors.append(
                 {
@@ -265,18 +278,21 @@ def validate_asset_update(data: dict[str, Any]) -> list[dict[str, str]]:
                         }
                     )
                 elif useful_life_int == 0:
-                    # 0 is only valid for TERRENOS (depreciation_method="none")
-                    method_in_payload = str(data.get("depreciation_method", "")).strip()
-                    if method_in_payload != "none":
-                        errors.append(
-                            {
-                                "field": "useful_life_months",
-                                "message": (
-                                    "Useful life must be greater than 0 "
-                                    "for this depreciation method"
-                                ),
-                            }
-                        )
+                    # 0 is only valid for TERRENOS (depreciation_method="none").
+                    # Only reject when method is explicitly in this payload and is not "none".
+                    # When method is absent, we cannot know the current DB value — defer.
+                    if "depreciation_method" in data:
+                        method_in_payload = str(data.get("depreciation_method", "")).strip()
+                        if method_in_payload != "none":
+                            errors.append(
+                                {
+                                    "field": "useful_life_months",
+                                    "message": (
+                                        "Useful life must be greater than 0 "
+                                        "for this depreciation method"
+                                    ),
+                                }
+                            )
             except (ValueError, TypeError):
                 errors.append(
                     {

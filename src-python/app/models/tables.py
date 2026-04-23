@@ -103,6 +103,16 @@ maintenance_events = Table(
     Column("updated_at", Text, nullable=False),
 )
 
+asset_photos = Table(
+    "asset_photos",
+    metadata,
+    Column("photo_id", Integer, primary_key=True, autoincrement=True),
+    Column("asset_id", Integer, nullable=False),  # FK to fixed_assets
+    Column("file_path", Text, nullable=False),
+    Column("is_primary", Integer, nullable=False, server_default="0"),  # 0 | 1
+    Column("uploaded_at", Text, nullable=False),  # ISO 8601 UTC
+)
+
 audit_logs = Table(
     "audit_logs",
     metadata,

@@ -105,7 +105,7 @@ def create_asset():
             updated_at=now,
         )
         result = conn.execute(stmt)
-        new_id = result.lastrowid
+        new_id = result.inserted_primary_key[0]
 
         row = conn.execute(select(fixed_assets).where(fixed_assets.c.asset_id == new_id)).fetchone()
         conn.commit()

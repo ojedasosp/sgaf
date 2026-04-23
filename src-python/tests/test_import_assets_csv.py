@@ -8,9 +8,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import create_engine, event, select, text
 
-from app.models.tables import audit_logs, fixed_assets
+from app.models.tables import audit_logs, fixed_assets, metadata
 from app.utils.audit_logger import AuditLogger
-from migrations.runner import run_migrations
 from scripts.import_assets_csv import (
     _decimal_or_none_to_db,
     _map_engine_method,
@@ -63,19 +62,6 @@ def _write_csv(
     path.write_text("\n".join(lines) + "\n", encoding=encoding)
     return path
 
-
-def _init_db(db_path: pathlib.Path) -> None:
-    """Create an empty SQLite DB at ``db_path`` with all migrations applied."""
-    engine = create_engine(f"sqlite:///{db_path}")
-
-    @event.listens_for(engine, "connect")
-    def _pragma(dbapi_conn, _record):  # pragma: no cover — wiring only
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.close()
-
-    run_migrations(engine)
-    engine.dispose()
 
 
 def _base_row(**overrides: str) -> dict[str, str]:
@@ -222,28 +208,37 @@ class TestNormalizeRow:
 
 @pytest.fixture
 def tmp_db(tmp_path):
+    """Return a fresh SQLite Engine with the full schema created via metadata.create_all().
+
+    Uses SQLAlchemy metadata instead of the SQL migration runner so the tests
+    remain dialect-agnostic — the migration files now contain PostgreSQL-specific
+    syntax (TO_CHAR, NOW() AT TIME ZONE) that SQLite cannot execute.
+
+    Tests inject this engine via ``run_import(..., engine=tmp_db)`` so no
+    PG_* environment variables are required during the test suite.
+    """
     db_path = tmp_path / "sgaf_test.db"
-    db_path.touch()
-    _init_db(db_path)
-    return db_path
-
-
-def _row_count(db_path: pathlib.Path, table) -> int:
     engine = create_engine(f"sqlite:///{db_path}")
-    try:
-        with engine.connect() as conn:
-            return conn.execute(text(f"SELECT count(*) FROM {table.name}")).scalar_one()
-    finally:
-        engine.dispose()
+
+    @event.listens_for(engine, "connect")
+    def _pragma(dbapi_conn, _record):  # pragma: no cover — wiring only
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+
+    metadata.create_all(engine)
+    yield engine
+    engine.dispose()
 
 
-def _fetch_all(db_path: pathlib.Path, table):
-    engine = create_engine(f"sqlite:///{db_path}")
-    try:
-        with engine.connect() as conn:
-            return conn.execute(select(table)).fetchall()
-    finally:
-        engine.dispose()
+def _row_count(engine, table) -> int:
+    with engine.connect() as conn:
+        return conn.execute(text(f"SELECT count(*) FROM {table.name}")).scalar_one()
+
+
+def _fetch_all(engine, table):
+    with engine.connect() as conn:
+        return conn.execute(select(table)).fetchall()
 
 
 class TestDryRun:
@@ -257,7 +252,7 @@ class TestDryRun:
                 _base_row(CODIGO="C"),
             ],
         )
-        report = run_import(csv_path, tmp_db, dry_run=True)
+        report = run_import(csv_path, dry_run=True, engine=tmp_db)
         assert report.total_read == 3
         assert len(report.errors) == 0
         assert _row_count(tmp_db, fixed_assets) == 0
@@ -267,7 +262,7 @@ class TestDryRun:
 class TestLiveImport:
     def test_valid_row_is_inserted(self, tmp_path, tmp_db):
         csv_path = _write_csv(tmp_path / "in.csv", [_base_row(CODIGO="LIVE-001")])
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 1
         assert len(report.errors) == 0
         rows = _fetch_all(tmp_db, fixed_assets)
@@ -282,15 +277,13 @@ class TestLiveImport:
             tmp_path / "in.csv",
             [_base_row(CODIGO="AUD-1"), _base_row(CODIGO="AUD-2"), _base_row(CODIGO="AUD-3")],
         )
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 3
 
-        engine = create_engine(f"sqlite:///{tmp_db}")
-        with engine.connect() as conn:
+        with tmp_db.connect() as conn:
             logs = conn.execute(
                 select(audit_logs).where(audit_logs.c.entity_type == "asset")
             ).fetchall()
-        engine.dispose()
         assert len(logs) == 3
         for log in logs:
             entry = dict(log._mapping)
@@ -302,7 +295,7 @@ class TestLiveImport:
         # AC3 — pre-seed DB and run CSV that duplicates the code
         # Pre-seed via the script itself for simplicity.
         pre_csv = _write_csv(tmp_path / "seed.csv", [_base_row(CODIGO="DUP-001")])
-        run_import(pre_csv, tmp_db, dry_run=False)
+        run_import(pre_csv, dry_run=False, engine=tmp_db)
         assert _row_count(tmp_db, fixed_assets) == 1
 
         main_csv = _write_csv(
@@ -312,7 +305,7 @@ class TestLiveImport:
                 _base_row(CODIGO="NEW-001"),  # unique
             ],
         )
-        report = run_import(main_csv, tmp_db, dry_run=False)
+        report = run_import(main_csv, dry_run=False, engine=tmp_db)
         assert report.successful == 1
         assert len(report.errors) == 1
         assert "duplicate" in report.errors[0][2]
@@ -323,7 +316,7 @@ class TestLiveImport:
             tmp_path / "in.csv",
             [_base_row(CODIGO="X"), _base_row(CODIGO="X")],
         )
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 1
         assert len(report.errors) == 1
         assert "duplicate" in report.errors[0][2]
@@ -350,7 +343,7 @@ class TestAC4Rollback:
                 super().log_change(**kwargs)
 
         _FailOnThirdAudit._calls = 0  # reset between test runs
-        report = run_import(csv_path, tmp_db, dry_run=False, audit_logger=_FailOnThirdAudit())
+        report = run_import(csv_path, dry_run=False, audit_logger=_FailOnThirdAudit(), engine=tmp_db)
         assert report.successful == 0
         assert _row_count(tmp_db, fixed_assets) == 0
         assert _row_count(tmp_db, audit_logs) == 0
@@ -364,7 +357,7 @@ class TestReport:
             tmp_path / "in.csv",
             [_base_row(CODIGO="R-1"), _base_row(CODIGO="R-2", TIPO="UNKNOWN_TYPE")],
         )
-        report = run_import(csv_path, tmp_db, dry_run=True)
+        report = run_import(csv_path, dry_run=True, engine=tmp_db)
         text_out = report.format()
         assert "Total rows read" in text_out
         assert "Successful imports" in text_out
@@ -376,7 +369,7 @@ class TestReport:
 
     def test_live_report_committed_footer(self, tmp_path, tmp_db):
         csv_path = _write_csv(tmp_path / "in.csv", [_base_row(CODIGO="RPT-1")])
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert "COMMITTED — 1 rows inserted" in report.format()
 
 
@@ -394,7 +387,7 @@ class TestAC6Terrenos:
                 )
             ],
         )
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 1
         rows = _fetch_all(tmp_db, fixed_assets)
         asset = dict(rows[0]._mapping)
@@ -409,7 +402,7 @@ class TestAC7DateEdgeCases:
             tmp_path / "in.csv",
             [_base_row(CODIGO="DT-1", **{"F.ADQ": "2015"})],
         )
-        report = run_import(csv_path, tmp_db, dry_run=True)
+        report = run_import(csv_path, dry_run=True, engine=tmp_db)
         assert len(report.errors) == 1
         assert "Invalid date" in report.errors[0][2]
 
@@ -418,7 +411,7 @@ class TestAC7DateEdgeCases:
             tmp_path / "in.csv",
             [_base_row(CODIGO="DT-2", **{"F.ADQ": ""})],
         )
-        report = run_import(csv_path, tmp_db, dry_run=True)
+        report = run_import(csv_path, dry_run=True, engine=tmp_db)
         assert len(report.errors) == 1
 
 
@@ -432,7 +425,7 @@ class TestAC8UnknownTipo:
                 _base_row(CODIGO="BAD-1", TIPO="MOBILIARIO XYZ"),
             ],
         )
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 1
         assert len(report.errors) == 1
         assert "MOBILIARIO XYZ" in report.errors[0][2]
@@ -492,7 +485,7 @@ class TestAC11ColumnMappingFidelity:
                 )
             ],
         )
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 1
         asset = dict(_fetch_all(tmp_db, fixed_assets)[0]._mapping)
 
@@ -534,7 +527,7 @@ class TestOptionalFieldsToNull:
             FACTURA="",
         )
         csv_path = _write_csv(tmp_path / "in.csv", [row])
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 1
         asset = dict(_fetch_all(tmp_db, fixed_assets)[0]._mapping)
         assert asset["characteristics"] is None
@@ -591,7 +584,7 @@ class TestGoldenRealWorld:
             ),
         ]
         csv_path = _write_csv(tmp_path / "real.csv", rows)
-        report = run_import(csv_path, tmp_db, dry_run=False)
+        report = run_import(csv_path, dry_run=False, engine=tmp_db)
         assert report.successful == 5, report.format()
         assert len(report.errors) == 0
         assert _row_count(tmp_db, fixed_assets) == 5
@@ -605,29 +598,56 @@ class TestDecimalHelpers:
 
 
 class TestMainExitCodes:
-    """M2 fix: verify Task 1.4 exit codes via the CLI main() entry point."""
+    """M2 fix: verify Task 1.4 exit codes via the CLI main() entry point.
+
+    main() now reads PG_* env vars instead of --db. Tests inject a SQLite engine
+    via monkeypatching ``scripts.import_assets_csv.get_engine`` and set fake
+    PG_* vars so the Config validation guard passes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_engine(self, monkeypatch, tmp_db):
+        """Replace get_engine() with the test SQLite engine for all main() tests.
+
+        Config attributes are class-level (evaluated at import time), so we
+        patch them directly with setattr rather than via setenv.
+        """
+        from app import config as _cfg
+        import scripts.import_assets_csv as _mod
+
+        monkeypatch.setattr(_cfg.Config, "PG_HOST", "localhost")
+        monkeypatch.setattr(_cfg.Config, "PG_USER", "test")
+        monkeypatch.setattr(_cfg.Config, "PG_PASS", "test")
+        monkeypatch.setattr(_cfg.Config, "PG_DB", "test")
+        monkeypatch.setattr(_mod, "get_engine", lambda: tmp_db)
 
     def test_exit_0_on_clean_live_import(self, tmp_path, tmp_db):
         # Exit 0 — no errors, live mode, all rows succeed.
         csv_path = _write_csv(tmp_path / "in.csv", [_base_row(CODIGO="EX0-1")])
-        code = main(["--csv", str(csv_path), "--db", str(tmp_db)])
+        code = main(["--csv", str(csv_path)])
         assert code == 0
 
     def test_exit_0_on_clean_dry_run(self, tmp_path, tmp_db):
         # Exit 0 — no errors, dry-run mode.
         csv_path = _write_csv(tmp_path / "in.csv", [_base_row(CODIGO="EX0-DR")])
-        code = main(["--csv", str(csv_path), "--db", str(tmp_db), "--dry-run"])
+        code = main(["--csv", str(csv_path), "--dry-run"])
         assert code == 0
 
-    def test_exit_1_csv_not_found(self, tmp_path, tmp_db):
+    def test_exit_1_csv_not_found(self, tmp_path):
         # Exit 1 — CSV file does not exist.
-        code = main(["--csv", str(tmp_path / "missing.csv"), "--db", str(tmp_db)])
+        code = main(["--csv", str(tmp_path / "missing.csv")])
         assert code == 1
 
-    def test_exit_1_db_not_found(self, tmp_path):
-        # Exit 1 — DB file does not exist.
+    def test_exit_1_missing_pg_env_vars(self, tmp_path, monkeypatch):
+        # Exit 1 — required PG_* env vars are absent (overrides the autouse fixture).
+        from app import config as _cfg
+
+        monkeypatch.setattr(_cfg.Config, "PG_HOST", "")
+        monkeypatch.setattr(_cfg.Config, "PG_USER", "")
+        monkeypatch.setattr(_cfg.Config, "PG_PASS", "")
+        monkeypatch.setattr(_cfg.Config, "PG_DB", "")
         csv_path = _write_csv(tmp_path / "in.csv", [_base_row()])
-        code = main(["--csv", str(csv_path), "--db", str(tmp_path / "missing.db")])
+        code = main(["--csv", str(csv_path)])
         assert code == 1
 
     def test_exit_2_on_row_errors(self, tmp_path, tmp_db):
@@ -639,7 +659,7 @@ class TestMainExitCodes:
                 _base_row(CODIGO="BAD-1", TIPO="UNKNOWN_TYPE_XYZ"),
             ],
         )
-        code = main(["--csv", str(csv_path), "--db", str(tmp_db)])
+        code = main(["--csv", str(csv_path)])
         assert code == 2
 
 
@@ -651,15 +671,13 @@ class TestM1AuditTimestampConsistency:
             tmp_path / "in.csv",
             [_base_row(CODIGO="TS-1"), _base_row(CODIGO="TS-2")],
         )
-        run_import(csv_path, tmp_db, dry_run=False)
+        run_import(csv_path, dry_run=False, engine=tmp_db)
 
-        engine = create_engine(f"sqlite:///{tmp_db}")
-        with engine.connect() as conn:
+        with tmp_db.connect() as conn:
             assets = conn.execute(select(fixed_assets)).fetchall()
             logs = conn.execute(
                 select(audit_logs).where(audit_logs.c.entity_type == "asset")
             ).fetchall()
-        engine.dispose()
 
         asset_created_ats = {dict(a._mapping)["created_at"] for a in assets}
         log_timestamps = {dict(log._mapping)["timestamp"] for log in logs}
@@ -689,7 +707,7 @@ class TestH2NormalizedCodigoInErrors:
             [row],
             headers=headers_with_space,
         )
-        report = run_import(csv_path, tmp_db, dry_run=True)
+        report = run_import(csv_path, dry_run=True, engine=tmp_db)
         assert len(report.errors) == 1
         # Code must be resolved to "SPACE-001", not "?"
         assert report.errors[0][1] == "SPACE-001"

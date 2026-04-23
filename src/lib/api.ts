@@ -132,10 +132,12 @@ export async function getDepreciationResults(
 /// Uses raw fetch with Authorization header from token.
 export async function generatePdfReport(
   params: {
-    report_type: "per_asset" | "monthly_summary" | "asset_register";
+    report_type: "per_asset" | "monthly_summary" | "asset_register" | "asset_life_sheet";
     asset_id?: number;
     period_month?: number;
     period_year?: number;
+    filter_month?: number | null;
+    filter_year?: number | null;
   },
   token: string,
 ): Promise<Blob> {
@@ -242,6 +244,48 @@ export async function getCategories(
 ): Promise<string[]> {
   return apiFetch<{ data: { categories: string[] } }>("/config/categories", { token }).then(
     (res) => res.data.categories,
+  );
+}
+
+/// GET /api/v1/photos/?asset_id=<id> — List photos for an asset.
+export async function getAssetPhotos(
+  assetId: number,
+  token: string,
+): Promise<{ data: import("../types/asset").AssetPhoto[] }> {
+  return apiFetch<{ data: import("../types/asset").AssetPhoto[] }>(
+    `/photos/?asset_id=${assetId}`,
+    { token },
+  );
+}
+
+/// POST /api/v1/photos/ — Register a new photo for an asset.
+export async function uploadAssetPhoto(
+  payload: { asset_id: number; file_path: string },
+  token: string,
+): Promise<{ data: import("../types/asset").AssetPhoto }> {
+  return apiFetch<{ data: import("../types/asset").AssetPhoto }>("/photos/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    token,
+  });
+}
+
+/// DELETE /api/v1/photos/<photo_id> — Delete a photo.
+export async function deleteAssetPhoto(
+  photoId: number,
+  token: string,
+): Promise<void> {
+  return apiFetch<void>(`/photos/${photoId}`, { method: "DELETE", token });
+}
+
+/// PATCH /api/v1/photos/<photo_id>/primary — Set photo as primary.
+export async function setAssetPhotoPrimary(
+  photoId: number,
+  token: string,
+): Promise<{ data: import("../types/asset").AssetPhoto }> {
+  return apiFetch<{ data: import("../types/asset").AssetPhoto }>(
+    `/photos/${photoId}/primary`,
+    { method: "PATCH", token },
   );
 }
 

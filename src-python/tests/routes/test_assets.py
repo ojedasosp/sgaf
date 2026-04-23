@@ -267,6 +267,22 @@ class TestValidationErrors:
         assert resp.status_code == 400
         assert resp.get_json()["field"] == "useful_life_months"
 
+    def test_useful_life_zero_with_method_none_returns_201(
+        self, test_client, auth_token, valid_payload
+    ):
+        """POST with useful_life_months=0 and depreciation_method='none' is valid (H1 fix)."""
+        payload = {
+            **valid_payload,
+            "useful_life_months": 0,
+            "depreciation_method": "none",
+            "salvage_value": "0",  # TERRENOS have no salvage
+        }
+        resp = _post_asset(test_client, payload, auth_token)
+        assert resp.status_code == 201
+        data = resp.get_json()["data"]
+        assert data["depreciation_method"] == "none"
+        assert data["useful_life_months"] == 0
+
     def test_useful_life_negative_returns_400(self, test_client, auth_token, valid_payload):
         payload = {**valid_payload, "useful_life_months": -12}
         resp = _post_asset(test_client, payload, auth_token)
@@ -401,7 +417,7 @@ def _insert_asset(conn, code: str = "LAP-001", **overrides) -> int:
     defaults.update(overrides)
     result = conn.execute(insert(fixed_assets).values(**defaults))
     conn.commit()
-    return result.lastrowid
+    return result.inserted_primary_key[0]
 
 
 def _get_assets(test_client, token: str):
@@ -439,7 +455,7 @@ class TestListAssets:
         assert codes == {"LAP-001", "MON-001"}
 
     def test_response_shape_contains_all_fields(self, test_client, auth_token, test_engine):
-        """Each asset in the list has all expected fields."""
+        """Each asset in the list has all expected fields including import fields (Story 8.5)."""
         with test_engine.connect() as conn:
             _insert_asset(conn, code="LAP-001")
         resp = _get_assets(test_client, auth_token)
@@ -458,6 +474,15 @@ class TestListAssets:
             "retirement_date",
             "created_at",
             "updated_at",
+            # Import fields — migration 009, Story 8.5
+            "imported_accumulated_depreciation",
+            "additions_improvements",
+            "accounting_code",
+            "cost_center",
+            "supplier",
+            "invoice_number",
+            "location",
+            "characteristics",
         }
         assert expected_keys.issubset(set(asset.keys()))
 
@@ -543,7 +568,7 @@ class TestGetAsset:
         assert asset["salvage_value"] == "120.0000"
 
     def test_returns_all_expected_fields(self, test_client, auth_token, test_engine):
-        """Response data contains all asset fields."""
+        """Response data contains all asset fields including import fields (Story 8.5)."""
         with test_engine.connect() as conn:
             asset_id = _insert_asset(conn, code="LAP-001")
         resp = _get_asset(test_client, asset_id, auth_token)
@@ -562,6 +587,15 @@ class TestGetAsset:
             "retirement_date",
             "created_at",
             "updated_at",
+            # Import fields — migration 009, Story 8.5
+            "imported_accumulated_depreciation",
+            "additions_improvements",
+            "accounting_code",
+            "cost_center",
+            "supplier",
+            "invoice_number",
+            "location",
+            "characteristics",
         ]:
             assert key in asset, f"Missing field: {key}"
 
@@ -952,6 +986,28 @@ class TestPatchImportFields:
         assert log is not None
         assert log.new_value == "25000.0000"
         assert log.old_value == ""  # was NULL — stored as empty string in audit
+
+    def test_patch_terrenos_useful_life_zero_without_method_in_payload_accepted(
+        self, test_client, auth_token, test_engine
+    ):
+        """PATCH with useful_life_months=0 alone (no method) is accepted for existing TERRENOS.
+
+        The validator cannot know the current DB method when it is absent from the
+        payload — it defers. Frontend always sends method, but direct API callers
+        should not be incorrectly rejected (M2 fix).
+        """
+        with test_engine.connect() as conn:
+            asset_id = _insert_asset(
+                conn,
+                code="TERRENO-002",
+                depreciation_method="none",
+                useful_life_months=0,
+            )
+        resp = _patch_asset(
+            test_client, asset_id, {"useful_life_months": 0}, auth_token
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["useful_life_months"] == 0
 
 
 # ---------------------------------------------------------------------------

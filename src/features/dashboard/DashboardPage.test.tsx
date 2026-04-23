@@ -398,7 +398,7 @@ describe("DashboardPage — PDF status row (AC7)", () => {
     });
   });
 
-  it("shows 'Exportar a ZEUS' CTA when depreciation calculated AND PDF generated", async () => {
+  it("shows 'Exportar' CTA when depreciation calculated AND PDF generated", async () => {
     const deprWithResults = {
       data: [{ result_id: 1, asset_id: 1 }],
       total: 1,
@@ -411,7 +411,7 @@ describe("DashboardPage — PDF status row (AC7)", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Exportar a ZEUS" }),
+        screen.getByRole("button", { name: "Exportar" }),
       ).toBeInTheDocument();
     });
   });

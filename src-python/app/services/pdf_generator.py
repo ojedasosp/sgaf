@@ -135,10 +135,14 @@ class PDFGenerator:
             return self._generate_asset_register(
                 company_config=company_config, _compress=_compress, **kwargs
             )
+        elif report_type == "asset_life_sheet":
+            return self._generate_asset_life_sheet(
+                company_config=company_config, _compress=_compress, **kwargs
+            )
         else:
             raise ValueError(
                 f"Unknown report_type: {report_type!r}. "
-                "Must be 'per_asset', 'monthly_summary', or 'asset_register'."
+                "Must be 'per_asset', 'monthly_summary', 'asset_register', or 'asset_life_sheet'."
             )
 
     # ------------------------------------------------------------------
@@ -396,6 +400,125 @@ class PDFGenerator:
             )
         )
         story.append(table)
+
+        doc.build(story)
+        return buffer.getvalue()
+
+    def _generate_asset_life_sheet(
+        self,
+        company_config: dict,
+        asset: dict,
+        maintenance_events: list,
+        filter_label: str,
+        _compress: bool = True,
+    ) -> bytes:
+        """Generate asset life sheet PDF.
+
+        Args:
+            asset: dict with keys: code, description, category, status,
+                   acquisition_date (str), historical_cost (Decimal),
+                   supplier, invoice_number, location, characteristics,
+                   photo_path (str | None).
+            maintenance_events: list of dicts with keys: start_date, event_type,
+                                description, vendor, actual_cost (str | None), status.
+            filter_label: section title indicating the applied filter.
+        """
+        buffer = BytesIO()
+        doc = self._make_doc(buffer, compress=_compress)
+        styles = self._make_styles()
+
+        story = self._build_header_elements(company_config, styles)
+
+        story.append(Paragraph("Hoja de Vida del Activo", styles["report_title"]))
+        story.append(Spacer(1, 0.2 * cm))
+
+        # Asset data table (2-column: label | value)
+        asset_fields = [
+            ("Código", asset.get("code", "") or "—"),
+            ("Descripción", asset.get("description", "") or "—"),
+            ("Categoría", asset.get("category", "") or "—"),
+            ("Estado", asset.get("status", "") or "—"),
+            ("Fecha de Adquisición", asset.get("acquisition_date", "") or "—"),
+            ("Costo Histórico", _fmt(asset["historical_cost"]) if asset.get("historical_cost") else "—"),
+            ("Proveedor", asset.get("supplier") or "—"),
+            ("Factura", asset.get("invoice_number") or "—"),
+            ("Ubicación", asset.get("location") or "—"),
+            ("Características", asset.get("characteristics") or "—"),
+        ]
+        asset_table_data = [[Paragraph(f"<b>{label}</b>", styles["section_label"]), Paragraph(str(value), styles["section_label"])] for label, value in asset_fields]
+        asset_table = Table(asset_table_data, colWidths=[4.5 * cm, 12 * cm])
+        asset_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (0, -1), _GRUVBOX_BG2),
+                    ("ROWBACKGROUNDS", (1, 0), (1, -1), [colors.white, _GRUVBOX_BG2]),
+                    ("GRID", (0, 0), (-1, -1), 0.5, _GRUVBOX_BG2),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(asset_table)
+        story.append(Spacer(1, 0.4 * cm))
+
+        # Primary photo — silently skip if path missing or file not on disk
+        photo_path = asset.get("photo_path")
+        if photo_path and os.path.isfile(photo_path):
+            try:
+                img = Image(photo_path, width=8 * cm, height=8 * cm, kind="proportional")
+                story.append(img)
+                story.append(Spacer(1, 0.4 * cm))
+            except Exception:
+                pass
+
+        # Maintenance section title
+        story.append(Paragraph(filter_label, styles["report_title"]))
+        story.append(Spacer(1, 0.2 * cm))
+
+        if not maintenance_events:
+            story.append(Paragraph("No hay eventos de mantenimiento registrados.", styles["section_label"]))
+        else:
+            cell_style = ParagraphStyle(
+                "maint_cell",
+                parent=styles["section_label"],
+                fontSize=8,
+                leading=10,
+            )
+            header_style = ParagraphStyle(
+                "maint_header",
+                parent=styles["section_label"],
+                fontSize=9,
+                fontName="Helvetica-Bold",
+                leading=11,
+            )
+            headers = [
+                Paragraph("Fecha", header_style),
+                Paragraph("Tipo", header_style),
+                Paragraph("Descripción", header_style),
+                Paragraph("Proveedor", header_style),
+                Paragraph("Costo", header_style),
+                Paragraph("Estado", header_style),
+            ]
+            table_data = [headers]
+            for evt in maintenance_events:
+                table_data.append([
+                    Paragraph(evt.get("start_date", "—") or "—", cell_style),
+                    Paragraph(evt.get("event_type", "—") or "—", cell_style),
+                    Paragraph(evt.get("description", "—") or "—", cell_style),
+                    Paragraph(evt.get("vendor", "—") or "—", cell_style),
+                    Paragraph(evt.get("actual_cost", "—") or "—", cell_style),
+                    Paragraph(evt.get("status", "—") or "—", cell_style),
+                ])
+            # Column widths must sum to 17 cm (A4 width 21 cm − 2 cm left − 2 cm right margin)
+            col_widths = [2 * cm, 2.5 * cm, 6 * cm, 3 * cm, 1.5 * cm, 2 * cm]
+            maint_table = Table(table_data, colWidths=col_widths, repeatRows=1)
+            maint_table.setStyle(TableStyle(
+                _BASE_TABLE_CMDS + [("VALIGN", (0, 0), (-1, -1), "TOP")]
+            ))
+            story.append(maint_table)
 
         doc.build(story)
         return buffer.getvalue()

@@ -18,6 +18,7 @@ pub enum BackendState {
     Loading,
     Ready(u16),
     Error(String),
+    SetupRequired,
 }
 
 pub struct BackendStatus(pub Mutex<BackendState>);
@@ -68,22 +69,52 @@ pub async fn start_backend(app: AppHandle) {
     };
     let health_url = format!("http://127.0.0.1:{}/api/v1/health", port);
 
-    // Resolve DB path: {AppData}/sgaf/sgaf.db
-    let db_path = match app.path().app_data_dir() {
+    // Ensure {AppData}/sgaf/ exists (home for db.conf)
+    match app.path().app_data_dir() {
         Ok(app_data) => {
-            let sgaf_dir = app_data.join("sgaf");
-            if let Err(e) = fs::create_dir_all(&sgaf_dir) {
-                let msg = format!("Cannot create app data directory: {}", e);
+            if let Err(e) = fs::create_dir_all(app_data.join("sgaf")) {
+                let msg = format!("Cannot create app data directory: {e}");
                 if let Some(state) = app.try_state::<BackendStatus>() {
                     *state.0.lock().unwrap() = BackendState::Error(msg.clone());
                 }
                 app.emit("backend-error", &msg).ok();
                 return;
             }
-            sgaf_dir.join("sgaf.db").to_string_lossy().to_string()
         }
         Err(e) => {
-            let msg = format!("Cannot resolve app data directory: {}", e);
+            let msg = format!("Cannot resolve app data directory: {e}");
+            if let Some(state) = app.try_state::<BackendStatus>() {
+                *state.0.lock().unwrap() = BackendState::Error(msg.clone());
+            }
+            app.emit("backend-error", &msg).ok();
+            return;
+        }
+    }
+
+    // If db.conf doesn't exist, prompt user to configure the connection
+    match crate::db_config::config_path(&app) {
+        Ok(path) if !path.exists() => {
+            if let Some(state) = app.try_state::<BackendStatus>() {
+                *state.0.lock().unwrap() = BackendState::SetupRequired;
+            }
+            app.emit("db-setup-required", ()).ok();
+            return;
+        }
+        Err(e) => {
+            let msg = format!("Cannot resolve db.conf path: {e}");
+            if let Some(state) = app.try_state::<BackendStatus>() {
+                *state.0.lock().unwrap() = BackendState::Error(msg.clone());
+            }
+            app.emit("backend-error", &msg).ok();
+            return;
+        }
+        _ => {} // File exists — proceed to load
+    }
+
+    // Load PostgreSQL credentials from {AppData}/sgaf/db.conf
+    let db_cfg = match crate::db_config::load(&app) {
+        Ok(cfg) => cfg,
+        Err(msg) => {
             if let Some(state) = app.try_state::<BackendStatus>() {
                 *state.0.lock().unwrap() = BackendState::Error(msg.clone());
             }
@@ -92,13 +123,17 @@ pub async fn start_backend(app: AppHandle) {
         }
     };
 
-    // Spawn sidecar binary with FLASK_PORT and SGAF_DB_PATH env vars
+    // Spawn sidecar binary with FLASK_PORT and PostgreSQL env vars
     let sidecar_result = app
         .shell()
         .sidecar("sgaf-backend")
         .map(|cmd| {
             cmd.env("FLASK_PORT", port.to_string())
-                .env("SGAF_DB_PATH", &db_path)
+                .env("PG_HOST", &db_cfg.host)
+                .env("PG_PORT", &db_cfg.port)
+                .env("PG_USER", &db_cfg.user)
+                .env("PG_PASS", &db_cfg.pass)
+                .env("PG_DB",   &db_cfg.db)
         })
         .and_then(|cmd| cmd.spawn());
 

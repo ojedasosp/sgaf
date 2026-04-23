@@ -137,7 +137,7 @@ def create_maintenance_event():
             updated_at=now,
         )
         result = conn.execute(stmt)
-        new_event_id = result.lastrowid
+        new_event_id = result.inserted_primary_key[0]
 
         event_row = conn.execute(
             select(maintenance_events).where(maintenance_events.c.event_id == new_event_id)

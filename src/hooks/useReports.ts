@@ -14,10 +14,12 @@ export function useGenerateReport() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (params: {
-      report_type: "per_asset" | "monthly_summary" | "asset_register";
+      report_type: "per_asset" | "monthly_summary" | "asset_register" | "asset_life_sheet";
       asset_id?: number;
       period_month?: number;
       period_year?: number;
+      filter_month?: number | null;
+      filter_year?: number | null;
     }) => generatePdfReport(params, token ?? ""),
     onSuccess: (_data, variables) => {
       if (variables.report_type === "monthly_summary") {

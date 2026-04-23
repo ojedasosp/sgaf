@@ -1,12 +1,12 @@
 import { useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
-  { label: "Dashboard", path: "/dashboard", icon: "⊞" },
-  { label: "Activos", path: "/assets", icon: "◈" },
-  { label: "Depreciación", path: "/depreciation", icon: "∿" },
-  { label: "Reportes PDF", path: "/reports", icon: "⎘" },
-  { label: "Exportar ZEUS", path: "/export", icon: "⊡" },
-  { label: "Configuración", path: "/settings", icon: "⊶" },
+  { label: "Dashboard", path: "/dashboard", icon: "⊞", disable: false },
+  { label: "Activos", path: "/assets", icon: "◈", disable: false },
+  { label: "Depreciación", path: "/depreciation", icon: "∿", disable: false },
+  { label: "Reportes PDF", path: "/reports", icon: "⎘", disable: false },
+  { label: "Exportar", path: "/export", icon: "⊡", disable: true },
+  { label: "Configuración", path: "/settings", icon: "⊶", disable: false },
 ] as const;
 
 export default function Sidebar() {
@@ -35,6 +35,7 @@ export default function Sidebar() {
               key={item.path}
               type="button"
               onClick={() => navigate(item.path)}
+              disabled={item.disable}
               className={[
                 "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors",
                 isActive

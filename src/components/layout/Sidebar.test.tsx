@@ -19,7 +19,7 @@ describe("Sidebar", () => {
     expect(screen.getByText("Activos")).toBeInTheDocument();
     expect(screen.getByText("Depreciación")).toBeInTheDocument();
     expect(screen.getByText("Reportes PDF")).toBeInTheDocument();
-    expect(screen.getByText("Exportar ZEUS")).toBeInTheDocument();
+    expect(screen.getByText("Exportar")).toBeInTheDocument();
     expect(screen.queryByText("Mantenimientos")).not.toBeInTheDocument();
     expect(screen.getByText("Configuración")).toBeInTheDocument();
   });

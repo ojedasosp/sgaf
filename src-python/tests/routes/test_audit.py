@@ -88,7 +88,7 @@ def _insert_asset(conn, code: str = "LAP-001") -> int:
         )
     )
     conn.commit()
-    return result.lastrowid
+    return result.inserted_primary_key[0]
 
 
 def _get_audit(test_client, token: str, entity_type: str = "asset", entity_id: int = 1):

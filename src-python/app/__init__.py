@@ -25,6 +25,7 @@ def create_app():
     from app.routes.depreciation import depreciation_bp
     from app.routes.health import health_bp
     from app.routes.maintenance import maintenance_bp
+    from app.routes.photos import photos_bp
     from app.routes.reports import reports_bp
 
     app.register_blueprint(health_bp)
@@ -34,6 +35,7 @@ def create_app():
     app.register_blueprint(audit_bp)
     app.register_blueprint(depreciation_bp)
     app.register_blueprint(maintenance_bp)
+    app.register_blueprint(photos_bp)
     app.register_blueprint(reports_bp)
 
     # Global JSON error handler — never return HTML from Flask

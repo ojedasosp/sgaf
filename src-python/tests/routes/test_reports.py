@@ -27,7 +27,7 @@ import pytest
 from sqlalchemy import insert, select, text
 
 from app.middleware import clear_jwt_secret_cache
-from app.models.tables import app_config, depreciation_results, fixed_assets
+from app.models.tables import app_config, asset_photos, depreciation_results, fixed_assets, maintenance_events
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -91,7 +91,7 @@ def _insert_asset(conn, **overrides) -> int:
     defaults.update(overrides)
     result = conn.execute(insert(fixed_assets).values(**defaults))
     conn.commit()
-    return result.lastrowid
+    return result.inserted_primary_key[0]
 
 
 def _insert_depreciation_result(conn, asset_id: int, period_month: int, period_year: int) -> None:
@@ -520,3 +520,86 @@ class TestReportStatus:
         body = resp.get_json()
         assert body["error"] == "VALIDATION_ERROR"
         assert body["field"] == "period_month"
+
+
+# ---------------------------------------------------------------------------
+# Test: asset_life_sheet
+# ---------------------------------------------------------------------------
+
+
+def _insert_maintenance(conn, asset_id: int, start_date: str = "2026-04-10") -> int:
+    result = conn.execute(
+        insert(maintenance_events).values(
+            asset_id=asset_id,
+            description="Mantenimiento preventivo",
+            start_date=start_date,
+            status="completed",
+            event_type="preventivo",
+            created_at="2026-04-10T10:00:00Z",
+            updated_at="2026-04-10T10:00:00Z",
+        )
+    )
+    conn.commit()
+    return result.inserted_primary_key[0]
+
+
+class TestAssetLifeSheet:
+    def test_returns_pdf_all_maintenance(self, test_client, auth_token, test_engine):
+        with test_engine.connect() as conn:
+            aid = _insert_asset(conn, code="LS-001")
+            _insert_maintenance(conn, aid, "2026-04-10")
+            _insert_maintenance(conn, aid, "2026-03-15")
+
+        resp = test_client.post(
+            "/api/v1/reports/generate",
+            json={"report_type": "asset_life_sheet", "asset_id": aid},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 200
+        assert "application/pdf" in resp.content_type
+        assert resp.data[:4] == b"%PDF"
+
+    def test_returns_pdf_filtered_by_month(self, test_client, auth_token, test_engine):
+        with test_engine.connect() as conn:
+            aid = _insert_asset(conn, code="LS-002")
+            _insert_maintenance(conn, aid, "2026-04-05")
+            _insert_maintenance(conn, aid, "2026-03-20")
+
+        resp = test_client.post(
+            "/api/v1/reports/generate",
+            json={"report_type": "asset_life_sheet", "asset_id": aid, "filter_month": 4, "filter_year": 2026},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.data[:4] == b"%PDF"
+
+    def test_missing_asset_id_returns_400(self, test_client, auth_token):
+        resp = test_client.post(
+            "/api/v1/reports/generate",
+            json={"report_type": "asset_life_sheet"},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "VALIDATION_ERROR"
+        assert resp.get_json()["field"] == "asset_id"
+
+    def test_unknown_asset_returns_404(self, test_client, auth_token):
+        resp = test_client.post(
+            "/api/v1/reports/generate",
+            json={"report_type": "asset_life_sheet", "asset_id": 99999},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "NOT_FOUND"
+
+    def test_partial_filter_returns_400(self, test_client, auth_token, test_engine):
+        with test_engine.connect() as conn:
+            aid = _insert_asset(conn, code="LS-003")
+
+        resp = test_client.post(
+            "/api/v1/reports/generate",
+            json={"report_type": "asset_life_sheet", "asset_id": aid, "filter_month": 4},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "VALIDATION_ERROR"

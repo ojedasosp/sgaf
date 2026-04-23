@@ -196,7 +196,7 @@ def calculate_depreciation():
                 calculated_at=now,
             )
             insert_result = conn.execute(stmt)
-            result_id = insert_result.lastrowid
+            result_id = insert_result.inserted_primary_key[0]
 
             row = {
                 "result_id": result_id,

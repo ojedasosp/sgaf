@@ -2,6 +2,10 @@
 
 Reads schema_version table, applies any pending .sql scripts in numeric order.
 Each script runs in its own transaction — idempotent and safe to re-run.
+
+CLI usage:
+    python -m migrations.runner
+    PG_HOST=... PG_PORT=5432 PG_USER=... PG_PASS=... PG_DB=... python -m migrations.runner
 """
 
 from datetime import datetime, timezone
@@ -22,7 +26,7 @@ def run_migrations(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS schema_version (
-                    version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    version_id SERIAL PRIMARY KEY,
                     script_name TEXT NOT NULL UNIQUE,
                     applied_at TEXT NOT NULL
                 )
@@ -48,9 +52,37 @@ def run_migrations(engine: Engine) -> None:
         with engine.begin() as conn:
             for statement in sql_content.split(";"):
                 stmt = statement.strip()
-                if stmt:
+                # Skip empty statements and comment-only blocks (e.g. from semicolons inside -- comments)
+                non_comment_lines = [l for l in stmt.splitlines() if l.strip() and not l.strip().startswith("--")]
+                if stmt and non_comment_lines:
                     conn.execute(text(stmt))
             conn.execute(
                 text("INSERT INTO schema_version (script_name, applied_at) " "VALUES (:name, :ts)"),
                 {"name": script_name, "ts": applied_at},
             )
+        print(f"  [OK] {script_name}")
+
+
+if __name__ == "__main__":
+    import os
+    from sqlalchemy.engine import URL
+
+    host = os.environ.get("PG_HOST", "")
+    port = int(os.environ.get("PG_PORT", "5432"))
+    user = os.environ.get("PG_USER", "")
+    password = os.environ.get("PG_PASS", "")
+    database = os.environ.get("PG_DB", "")
+
+    missing = [k for k, v in {"PG_HOST": host, "PG_USER": user, "PG_PASS": password, "PG_DB": database}.items() if not v]
+    if missing:
+        print(f"Error: faltan variables de entorno: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
+    from sqlalchemy import create_engine
+
+    url = URL.create("postgresql+psycopg2", username=user, password=password, host=host, port=port, database=database)
+    engine = create_engine(url, pool_pre_ping=True)
+
+    print(f"Conectando a {host}:{port}/{database}...")
+    run_migrations(engine)
+    print("Migraciones completadas.")

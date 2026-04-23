@@ -1,6 +1,6 @@
 /// Tauri invoke() wrappers — OS-level operations only.
 /// Business logic goes through apiFetch() to Flask, not through these wrappers.
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
 /// Returns the OS app data directory for SGAF (e.g. ~/.local/share/com.sgaf.app)
@@ -50,4 +50,10 @@ export async function saveFilePicker(options?: {
 /// Writes binary content (as Uint8Array) to a file path via Tauri command.
 export async function writeBinaryFile(path: string, content: Uint8Array): Promise<void> {
   return invoke<void>("write_binary_file", { path, content: Array.from(content) });
+}
+
+/// Convert a local filesystem path to a URL the Tauri WebView can load.
+/// Handles platform differences (Windows uses http://asset.localhost/...).
+export function toWebviewUrl(path: string): string {
+  return convertFileSrc(path);
 }

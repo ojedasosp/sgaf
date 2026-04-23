@@ -9,6 +9,7 @@ Covers:
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from sqlalchemy import inspect, text
 
 from app.utils.decimal_utils import from_db_string
@@ -44,6 +45,14 @@ def _nullable_decimal(raw_value):
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "migrations"
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_test_rows(test_engine):
+    """Delete rows inserted by this module's tests after each test to prevent UniqueViolation on re-run."""
+    yield
+    with test_engine.begin() as conn:
+        conn.execute(text("DELETE FROM fixed_assets WHERE code LIKE 'TEST-%'"))
+
+
 def _apply_sql_file(engine, sql_file: Path) -> None:
     """Execute all statements in an SQL file within a single transaction."""
     sql_content = sql_file.read_text(encoding="utf-8")
@@ -60,7 +69,7 @@ def _ensure_schema_version_table(engine) -> None:
             text(
                 """
                 CREATE TABLE IF NOT EXISTS schema_version (
-                    version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    version_id SERIAL PRIMARY KEY,
                     script_name TEXT NOT NULL UNIQUE,
                     applied_at TEXT NOT NULL
                 )
@@ -173,11 +182,11 @@ def test_migration_009_idempotent(test_engine):
 
 
 def test_migration_009_total_schema_version_count(test_engine):
-    """After migration 009, schema_version has exactly 9 applied scripts (001–009)."""
+    """After all migrations, schema_version has exactly 11 applied scripts (001–011)."""
     with test_engine.connect() as conn:
         count = conn.execute(text("SELECT COUNT(*) FROM schema_version")).scalar()
 
-    assert count == 9, f"Expected 9 rows in schema_version after migration 009, got {count}"
+    assert count == 11, f"Expected 11 rows in schema_version after all migrations, got {count}"
 
 
 # ---------------------------------------------------------------------------

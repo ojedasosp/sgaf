@@ -846,14 +846,26 @@ describe("AssetDetail — import section (edit mode)", () => {
     const iadInput = screen.getByLabelText("Depreciación Acumulada al Importar");
     await userEvent.clear(iadInput);
     await userEvent.type(iadInput, "200000");
-    // trigger blur to show error
+    // trigger blur to show inline error
     await userEvent.tab();
 
     await waitFor(() => {
       expect(
-        screen.getByText(/No puede superar el costo efectivo/i),
+        screen.getByText(/La depreciación acumulada importada no puede superar el costo efectivo/i),
       ).toBeInTheDocument();
     });
+
+    // Verify save is actually blocked — form stays in edit mode after submit attempt
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar Cambios" }),
+    );
+    // Still in edit mode: "Guardar Cambios" button still present, error still visible
+    expect(
+      screen.getByRole("button", { name: "Guardar Cambios" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/La depreciación acumulada importada no puede superar el costo efectivo/i),
+    ).toBeInTheDocument();
   });
 
   it("triggers confirm dialog when IAD is changed on submit (AC4)", async () => {

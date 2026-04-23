@@ -1,45 +1,44 @@
 """Pytest fixtures for SGAF tests.
 
-Provides in-memory SQLite engine and Flask test client with DB initialized.
+Requires TEST_DATABASE_URL env var pointing to a PostgreSQL test database, e.g.:
+  TEST_DATABASE_URL=postgresql+psycopg2://user:pass@localhost:5432/sgaf_test
+
+For the pre-009 upgrade test, also set:
+  TEST_PRE_009_DATABASE_URL=postgresql+psycopg2://user:pass@localhost:5432/sgaf_pre009_test
+(must be a separate, clean database — the test applies migration 009 manually)
 """
 
+import os
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, text
 
 from migrations.runner import run_migrations
 
 
-def _make_engine_with_fk():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-
-    @event.listens_for(engine, "connect")
-    def _set_sqlite_pragma(dbapi_conn, connection_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    return engine
+def _require_url(var: str) -> str:
+    url = os.environ.get(var, "")
+    if not url:
+        pytest.skip(f"{var} not set — skipping DB tests")
+    return url
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def test_engine():
-    """In-memory SQLite engine with all migrations applied and FK enforcement."""
-    engine = _make_engine_with_fk()
+    """PostgreSQL engine with all migrations applied. Shared across the test session."""
+    engine = create_engine(_require_url("TEST_DATABASE_URL"))
     run_migrations(engine)
     return engine
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def test_engine_pre_009():
-    """In-memory SQLite engine with migrations 001–008 applied (pre-009 schema).
+    """PostgreSQL engine with migrations 001–008 applied (pre-009 schema).
 
-    Used by data-preservation tests that need to insert rows at the pre-009
-    schema version and then apply migration 009 on top to verify the AC1
-    upgrade scenario.
+    Uses TEST_PRE_009_DATABASE_URL — must be a separate clean database.
     """
-    engine = _make_engine_with_fk()
+    engine = create_engine(_require_url("TEST_PRE_009_DATABASE_URL"))
     migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
 
     with engine.begin() as conn:
@@ -47,7 +46,7 @@ def test_engine_pre_009():
             text(
                 """
                 CREATE TABLE IF NOT EXISTS schema_version (
-                    version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    version_id SERIAL PRIMARY KEY,
                     script_name TEXT NOT NULL UNIQUE,
                     applied_at TEXT NOT NULL
                 )
@@ -68,9 +67,9 @@ def test_engine_pre_009():
             conn.execute(
                 text(
                     "INSERT INTO schema_version (script_name, applied_at) "
-                    "VALUES (:name, :ts)"
+                    "VALUES (:name, :ts) ON CONFLICT (script_name) DO NOTHING"
                 ),
-                {"name": sql_file.name, "ts": "2026-04-12T00:00:00Z"},
+                {"name": sql_file.name, "ts": "2026-04-22T00:00:00Z"},
             )
 
     return engine
@@ -78,11 +77,15 @@ def test_engine_pre_009():
 
 @pytest.fixture
 def test_client(test_engine, monkeypatch):
-    """Flask test client backed by an in-memory SQLite database."""
+    """Flask test client backed by the test PostgreSQL database."""
     import app.database as db_module
 
     monkeypatch.setattr(db_module, "_engine", test_engine)
-    monkeypatch.setenv("SGAF_DB_PATH", ":memory:")
+    monkeypatch.setenv("PG_HOST", "localhost")
+    monkeypatch.setenv("PG_PORT", "5432")
+    monkeypatch.setenv("PG_USER", "test")
+    monkeypatch.setenv("PG_PASS", "test")
+    monkeypatch.setenv("PG_DB", "sgaf_test")
 
     from app import create_app
 

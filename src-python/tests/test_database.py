@@ -1,33 +1,36 @@
-"""Tests for database.py — engine creation, error handling, FK enforcement."""
+"""Tests for database.py — engine creation and error handling."""
 
 import pytest
 from sqlalchemy import text
 
 
-def test_get_engine_raises_when_db_path_empty(monkeypatch):
-    """AC5: Clear error when SGAF_DB_PATH is not set."""
+def test_get_engine_raises_when_pg_vars_missing(monkeypatch):
+    """Clear error when required PG_* vars are not set."""
     import app.database as db_module
 
     monkeypatch.setattr(db_module, "_engine", None)
-    monkeypatch.setattr("app.config.Config.DB_PATH", "")
+    monkeypatch.setattr("app.config.Config.PG_HOST", "")
 
-    with pytest.raises(RuntimeError, match="SGAF_DB_PATH"):
+    with pytest.raises(RuntimeError, match="Missing required environment variables"):
         db_module.get_engine()
 
 
 def test_get_engine_raises_when_db_unreachable(monkeypatch):
-    """AC5: Clear error when DB path directory does not exist."""
+    """Clear error when PostgreSQL server cannot be reached."""
     import app.database as db_module
 
     monkeypatch.setattr(db_module, "_engine", None)
-    monkeypatch.setattr("app.config.Config.DB_PATH", "/nonexistent/path/sgaf.db")
+    monkeypatch.setattr("app.config.Config.PG_HOST", "nonexistent.invalid.host")
+    monkeypatch.setattr("app.config.Config.PG_USER", "user")
+    monkeypatch.setattr("app.config.Config.PG_PASS", "pass")
+    monkeypatch.setattr("app.config.Config.PG_DB", "db")
 
-    with pytest.raises(RuntimeError, match="Cannot open SQLite database"):
+    with pytest.raises(RuntimeError, match="Cannot connect to PostgreSQL"):
         db_module.get_engine()
 
 
 def test_get_db_is_context_manager(test_engine, monkeypatch):
-    """get_db() must work with 'with' statement."""
+    """get_db() must work as a context manager and return a live connection."""
     import app.database as db_module
 
     monkeypatch.setattr(db_module, "_engine", test_engine)
@@ -35,14 +38,3 @@ def test_get_db_is_context_manager(test_engine, monkeypatch):
     with db_module.get_db() as conn:
         result = conn.execute(text("SELECT 1")).scalar()
         assert result == 1
-
-
-def test_foreign_keys_enforced(test_engine, monkeypatch):
-    """M1: PRAGMA foreign_keys=ON is set on every connection."""
-    import app.database as db_module
-
-    monkeypatch.setattr(db_module, "_engine", test_engine)
-
-    with db_module.get_db() as conn:
-        fk_status = conn.execute(text("PRAGMA foreign_keys")).scalar()
-        assert fk_status == 1, "Foreign key enforcement is OFF — expected ON"

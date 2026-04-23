@@ -4,7 +4,7 @@ All endpoints require JWT authentication via @require_auth.
 Returns PDF bytes with Content-Type: application/pdf.
 
 Endpoints:
-    POST /api/v1/reports/generate — generate one of three NIIF report types.
+    POST /api/v1/reports/generate — generate one of four NIIF report types.
 """
 
 from datetime import datetime, timezone
@@ -15,14 +15,14 @@ from sqlalchemy import select, update
 
 from app.database import get_db
 from app.middleware import require_auth
-from app.models.tables import app_config, depreciation_results, fixed_assets
+from app.models.tables import app_config, asset_photos, depreciation_results, fixed_assets, maintenance_events
 from app.services.depreciation_engine import DepreciationEngine
-from app.services.pdf_generator import PDFGenerator
+from app.services.pdf_generator import MONTH_NAMES, PDFGenerator
 from app.utils.decimal_utils import from_db_string
 
 reports_bp = Blueprint("reports", __name__, url_prefix="/api/v1/reports")
 
-_VALID_REPORT_TYPES = frozenset({"per_asset", "monthly_summary", "asset_register"})
+_VALID_REPORT_TYPES = frozenset({"per_asset", "monthly_summary", "asset_register", "asset_life_sheet"})
 
 
 def _get_company_config(conn) -> dict:
@@ -243,6 +243,78 @@ def _build_asset_register_pdf(conn, company_config: dict) -> bytes:
     )
 
 
+def _build_asset_life_sheet_pdf(
+    conn,
+    asset_id: int,
+    filter_month: int | None,
+    filter_year: int | None,
+    company_config: dict,
+) -> bytes:
+    """Fetch asset + primary photo + maintenance events and generate life sheet PDF.
+
+    Raises:
+        ValueError: if asset_id does not exist.
+    """
+    row = conn.execute(
+        select(fixed_assets).where(fixed_assets.c.asset_id == asset_id)
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Asset {asset_id} not found")
+
+    asset = dict(row._mapping)
+
+    # Primary photo path (if any)
+    photo_row = conn.execute(
+        select(asset_photos.c.file_path)
+        .where(asset_photos.c.asset_id == asset_id)
+        .where(asset_photos.c.is_primary == 1)
+        .limit(1)
+    ).fetchone()
+    photo_path = photo_row.file_path if photo_row else None
+
+    # Maintenance events — optionally filtered by month/year
+    stmt = (
+        select(maintenance_events)
+        .where(maintenance_events.c.asset_id == asset_id)
+        .order_by(maintenance_events.c.start_date.desc())
+    )
+    if filter_month is not None and filter_year is not None:
+        period_str = f"{filter_year}-{filter_month:02d}"
+        stmt = stmt.where(
+            maintenance_events.c.start_date.like(f"{period_str}%")
+        )
+        filter_label = f"Mantenimientos — {MONTH_NAMES.get(filter_month, str(filter_month))} {filter_year}"
+    else:
+        filter_label = "Todos los mantenimientos"
+
+    maint_rows = conn.execute(stmt).fetchall()
+    events = [dict(r._mapping) for r in maint_rows]
+
+    historical_cost = from_db_string(asset["historical_cost"]) if asset.get("historical_cost") else None
+
+    asset_dict = {
+        "code": asset.get("code", ""),
+        "description": asset.get("description", ""),
+        "category": asset.get("category", ""),
+        "status": asset.get("status", ""),
+        "acquisition_date": asset.get("acquisition_date", ""),
+        "historical_cost": historical_cost,
+        "supplier": asset.get("supplier"),
+        "invoice_number": asset.get("invoice_number"),
+        "location": asset.get("location"),
+        "characteristics": asset.get("characteristics"),
+        "photo_path": photo_path,
+    }
+
+    return PDFGenerator().generate_report(
+        "asset_life_sheet",
+        company_config=company_config,
+        asset=asset_dict,
+        maintenance_events=events,
+        filter_label=filter_label,
+    )
+
+
 @reports_bp.post("/generate")
 @require_auth
 def generate_report():
@@ -344,6 +416,34 @@ def generate_report():
             )
             conn.commit()
 
+        elif report_type == "asset_life_sheet":
+            if asset_id is None:
+                return jsonify({"error": "VALIDATION_ERROR", "message": "asset_id is required for asset_life_sheet report", "field": "asset_id"}), 400
+            if not isinstance(asset_id, int) or asset_id <= 0:
+                return jsonify({"error": "VALIDATION_ERROR", "message": "asset_id must be a positive integer", "field": "asset_id"}), 400
+
+            filter_month = body.get("filter_month")
+            filter_year = body.get("filter_year")
+
+            # Both must be present together, or both absent
+            if (filter_month is None) != (filter_year is None):
+                return jsonify({
+                    "error": "VALIDATION_ERROR",
+                    "message": "filter_month and filter_year must both be provided or both omitted",
+                    "field": "filter_month" if filter_month is None else "filter_year",
+                }), 400
+            if filter_month is not None:
+                if not isinstance(filter_month, int) or not (1 <= filter_month <= 12):
+                    return jsonify({"error": "VALIDATION_ERROR", "message": "filter_month must be an integer between 1 and 12", "field": "filter_month"}), 400
+            if filter_year is not None:
+                if not isinstance(filter_year, int) or not (2000 <= filter_year <= 2150):
+                    return jsonify({"error": "VALIDATION_ERROR", "message": "filter_year must be an integer between 2000 and 2150", "field": "filter_year"}), 400
+
+            try:
+                pdf_bytes = _build_asset_life_sheet_pdf(conn, asset_id, filter_month, filter_year, company_config)
+            except ValueError as e:
+                return jsonify({"error": "NOT_FOUND", "message": str(e)}), 404
+
         else:  # asset_register — no period or asset_id required
             pdf_bytes = _build_asset_register_pdf(conn, company_config)
 
@@ -351,6 +451,9 @@ def generate_report():
     response.headers["Content-Type"] = "application/pdf"
     if report_type == "asset_register":
         filename = "registro_activos_fijos.pdf"
+    elif report_type == "asset_life_sheet":
+        suffix = f"_{filter_year}-{filter_month:02d}" if filter_month is not None else "_todos"
+        filename = f"hoja_vida_asset{asset_id}{suffix}.pdf"
     else:
         filename = f"reporte_{report_type}_{period_year}-{period_month:02d}.pdf"
     response.headers["Content-Disposition"] = f'inline; filename="{filename}"'

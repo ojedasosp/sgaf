@@ -316,8 +316,8 @@ class TestMaintenanceComplete:
                     updated_at=now,
                 )
             )
+            event_id = result.inserted_primary_key[0]
             conn.commit()
-            event_id = result.lastrowid
         return {"event_id": event_id, "asset_id": active_asset["asset_id"]}
 
     def test_complete_event_returns_200(self, test_client, auth_token, open_event):

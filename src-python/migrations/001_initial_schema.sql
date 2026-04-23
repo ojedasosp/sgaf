@@ -1,5 +1,3 @@
-PRAGMA journal_mode=WAL;
-
 CREATE TABLE IF NOT EXISTS app_config (
     config_id INTEGER PRIMARY KEY,
     company_name TEXT NOT NULL DEFAULT '',
@@ -12,7 +10,7 @@ CREATE TABLE IF NOT EXISTS app_config (
 );
 
 CREATE TABLE IF NOT EXISTS fixed_assets (
-    asset_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id SERIAL PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL,
     historical_cost TEXT NOT NULL,
@@ -28,7 +26,7 @@ CREATE TABLE IF NOT EXISTS fixed_assets (
 );
 
 CREATE TABLE IF NOT EXISTS depreciation_results (
-    result_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id SERIAL PRIMARY KEY,
     asset_id INTEGER NOT NULL REFERENCES fixed_assets(asset_id),
     period_month INTEGER NOT NULL,
     period_year INTEGER NOT NULL,
@@ -39,7 +37,7 @@ CREATE TABLE IF NOT EXISTS depreciation_results (
 );
 
 CREATE TABLE IF NOT EXISTS maintenance_events (
-    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id SERIAL PRIMARY KEY,
     asset_id INTEGER NOT NULL REFERENCES fixed_assets(asset_id),
     description TEXT NOT NULL,
     start_date TEXT NOT NULL,
@@ -51,7 +49,7 @@ CREATE TABLE IF NOT EXISTS maintenance_events (
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
-    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    log_id SERIAL PRIMARY KEY,
     timestamp TEXT NOT NULL,
     actor TEXT NOT NULL,
     entity_type TEXT NOT NULL,

@@ -13,10 +13,11 @@ import DepreciationPage from "./features/depreciation/DepreciationPage";
 import ReportsPage from "./features/reports/ReportsPage";
 import SettingsPage from "./features/settings/SettingsPage";
 import Dashboard from "./screens/Dashboard";
+import DbSetup from "./screens/DbSetup";
 import Login from "./screens/Login";
 import SetupWizard from "./screens/SetupWizard";
 
-type BackendStatus = "loading" | "ready" | "error";
+type BackendStatus = "loading" | "ready" | "error" | "db-setup";
 
 /** Redirects to /login if no JWT token is present in the Zustand store. */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -29,33 +30,49 @@ function App() {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const navigate = useNavigate();
   const initialRouteResolved = useRef(false);
+  // When true, DbSetup handles backend-error inline — App.tsx must not switch to "error"
+  const dbSetupActiveRef = useRef(false);
 
   useEffect(() => {
-    // Listen for backend lifecycle events emitted by sidecar.rs (AC2, AC3)
+    // Listen for backend lifecycle events emitted by sidecar.rs
     const unlistenReady = listen<number>("backend-ready", (event) => {
+      dbSetupActiveRef.current = false;
       setApiPort(event.payload);
       setBackendStatus("ready");
     });
 
     const unlistenError = listen<string>("backend-error", (event) => {
+      if (dbSetupActiveRef.current) return; // DbSetup handles error inline
       setBackendStatus("error");
       setErrorMessage(event.payload);
     });
 
+    const unlistenDbSetup = listen("db-setup-required", () => {
+      dbSetupActiveRef.current = true;
+      setBackendStatus("db-setup");
+    });
+
     // Poll backend status in case the event fired before this listener registered.
     // This handles the race condition where the sidecar starts faster than React mounts.
-    invoke<{ Loading?: null; Ready?: number; Error?: string }>(
+    invoke<{ Loading?: null; Ready?: number; Error?: string } | string>(
       "get_backend_status",
     )
       .then((state) => {
-        if ("Ready" in state && state.Ready != null) {
-          setApiPort(state.Ready);
-          setBackendStatus("ready");
-        } else if ("Error" in state && state.Error != null) {
-          setBackendStatus("error");
-          setErrorMessage(state.Error);
+        if (state === "SetupRequired") {
+          dbSetupActiveRef.current = true;
+          setBackendStatus("db-setup");
+          return;
         }
-        // If Loading, do nothing — wait for the event
+        if (typeof state === "object") {
+          if ("Ready" in state && state.Ready != null) {
+            setApiPort(state.Ready);
+            setBackendStatus("ready");
+          } else if ("Error" in state && state.Error != null) {
+            setBackendStatus("error");
+            setErrorMessage(state.Error);
+          }
+        }
+        // "Loading" — wait for the event
       })
       .catch(() => {
         // Command not available (e.g., running outside Tauri) — ignore
@@ -64,6 +81,7 @@ function App() {
     return () => {
       unlistenReady.then((f) => f());
       unlistenError.then((f) => f());
+      unlistenDbSetup.then((f) => f());
     };
   }, []);
 
@@ -87,12 +105,28 @@ function App() {
     return <LoadingSpinner message="Iniciando SGAF..." />;
   }
 
+  if (backendStatus === "db-setup") {
+    return <DbSetup dbSetupActiveRef={dbSetupActiveRef} />;
+  }
+
   if (backendStatus === "error") {
     return (
-      <ErrorMessage
-        message={errorMessage}
-        hint="Verifica que la aplicación se instaló correctamente y vuelve a intentar."
-      />
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-8">
+        <ErrorMessage
+          message={errorMessage}
+          hint="Verifica las credenciales en db.conf y la conectividad de red."
+        />
+        <button
+          onClick={async () => {
+            await invoke("reset_db_config");
+            setBackendStatus("loading");
+            invoke("retry_backend");
+          }}
+          className="text-sm text-primary underline hover:opacity-80"
+        >
+          Reconfigurar conexión a base de datos
+        </button>
+      </div>
     );
   }
 

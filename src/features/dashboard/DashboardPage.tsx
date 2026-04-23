@@ -86,7 +86,7 @@ export default function DashboardPage() {
     ? `Calcular Depreciación — ${MONTH_LABELS[periodMonth]} ${periodYear}`
     : !isPdfGenerated
       ? "Generar Reporte PDF"
-      : "Exportar a ZEUS";
+      : "Exportar";
   const ctaPath = !isCalculated ? "/depreciation" : "/reports";
 
   function prevPeriod() {

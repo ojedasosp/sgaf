@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod db_config;
 pub mod sidecar;
 
 use std::sync::Mutex;
@@ -37,7 +38,14 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![commands::get_app_data_path, commands::get_backend_status, commands::write_binary_file])
+        .invoke_handler(tauri::generate_handler![
+            commands::get_app_data_path,
+            commands::get_backend_status,
+            commands::write_binary_file,
+            commands::save_db_config,
+            commands::reset_db_config,
+            commands::retry_backend,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -4,11 +4,13 @@ import { ApiError } from "../../lib/api";
 import { saveFilePicker, writeBinaryFile } from "../../lib/tauri";
 
 interface PdfReportCardProps {
-  reportType: "per_asset" | "monthly_summary" | "asset_register";
+  reportType: "per_asset" | "monthly_summary" | "asset_register" | "asset_life_sheet";
   label: string;
   periodMonth?: number;
   periodYear?: number;
   assetId?: number;
+  filterMonth?: number | null;
+  filterYear?: number | null;
 }
 
 function buildFilename(
@@ -16,9 +18,17 @@ function buildFilename(
   periodMonth?: number,
   periodYear?: number,
   assetId?: number,
+  filterMonth?: number | null,
+  filterYear?: number | null,
 ): string {
   if (reportType === "asset_register") {
     return "registro_activos_fijos.pdf";
+  }
+  if (reportType === "asset_life_sheet") {
+    const suffix = filterMonth != null && filterYear != null
+      ? `_${filterYear}-${String(filterMonth).padStart(2, "0")}`
+      : "_todos";
+    return `hoja_vida_asset${assetId ?? ""}${suffix}.pdf`;
   }
   if (reportType === "per_asset" && assetId != null) {
     return `reporte_per_asset_${periodYear}-${String(periodMonth).padStart(2, "0")}_asset${assetId}.pdf`;
@@ -32,6 +42,8 @@ export default function PdfReportCard({
   periodMonth,
   periodYear,
   assetId,
+  filterMonth,
+  filterYear,
 }: PdfReportCardProps) {
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
@@ -41,6 +53,7 @@ export default function PdfReportCard({
   const generateMutation = useGenerateReport();
 
   const isPerAssetWithoutAsset = reportType === "per_asset" && !assetId;
+  const isLifeSheetWithoutAsset = reportType === "asset_life_sheet" && !assetId;
 
   function handleGenerate() {
     setError(null);
@@ -52,6 +65,8 @@ export default function PdfReportCard({
         asset_id: assetId,
         period_month: periodMonth,
         period_year: periodYear,
+        filter_month: filterMonth,
+        filter_year: filterYear,
       },
       {
         onSuccess: (blob) => {
@@ -81,7 +96,7 @@ export default function PdfReportCard({
     if (!pdfBlob) return;
     setIsSaving(true);
     try {
-      const filename = buildFilename(reportType, periodMonth, periodYear, assetId);
+      const filename = buildFilename(reportType, periodMonth, periodYear, assetId, filterMonth, filterYear);
       const path = await saveFilePicker({
         title: "Guardar reporte PDF",
         defaultPath: filename,
@@ -129,7 +144,7 @@ export default function PdfReportCard({
         <button
           type="button"
           onClick={handleGenerate}
-          disabled={generateMutation.isPending || isPerAssetWithoutAsset}
+          disabled={generateMutation.isPending || isPerAssetWithoutAsset || isLifeSheetWithoutAsset}
           className="rounded-md bg-[#458588] px-4 py-1.5 text-xs font-medium text-white hover:bg-[#076678] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {generateMutation.isPending ? "Generando..." : error ? "Reintentar" : "Generar PDF"}

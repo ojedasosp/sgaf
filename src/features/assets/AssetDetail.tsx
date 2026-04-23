@@ -32,9 +32,17 @@ import {
 } from "../../hooks/useMaintenance";
 import MaintenanceHistory from "../maintenance/MaintenanceHistory";
 import AppLayout from "@/components/layout/AppLayout";
+import {
+  useDeleteAssetPhoto,
+  useGetAssetPhotos,
+  useSetAssetPhotoPrimary,
+  useUploadAssetPhoto,
+} from "../../hooks/usePhotos";
+import { openFilePicker, toWebviewUrl } from "../../lib/tauri";
 import type {
   AuditLogEntry,
   Asset,
+  AssetPhoto,
   AssetStatus,
   DepreciationMethod,
   RetireAssetPayload,
@@ -290,7 +298,7 @@ function validateEditField(
       const hc = Number(String(values.historical_cost).trim());
       const ai = Number(String(values.additions_improvements).trim() || "0");
       if (!isNaN(hc) && hc > 0 && n > hc + ai) {
-        return "No puede superar el costo efectivo (costo histórico + adiciones)";
+        return "La depreciación acumulada importada no puede superar el costo efectivo (costo histórico + adiciones)";
       }
       break;
     }
@@ -416,6 +424,63 @@ export default function AssetDetail() {
 
   // Import/accounting section state (view mode)
   const [isImportSectionOpen, setIsImportSectionOpen] = useState(false);
+
+  // Photos section state
+  const [isPhotosSectionOpen, setIsPhotosSectionOpen] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [pendingPhotoId, setPendingPhotoId] = useState<number | null>(null);
+  const { data: assetPhotos, isLoading: photosLoading } = useGetAssetPhotos(assetId);
+  const { mutate: uploadPhoto, isPending: isUploading } = useUploadAssetPhoto();
+  const { mutate: deletePhoto } = useDeleteAssetPhoto();
+  const { mutate: setPrimary } = useSetAssetPhotoPrimary();
+
+  async function handleUploadPhoto() {
+    const filePath = await openFilePicker({
+      title: "Seleccionar foto del activo",
+      filters: [{ name: "Imágenes", extensions: ["jpg", "jpeg", "png"] }],
+    });
+    if (!filePath) return;
+    setPhotoError(null);
+    uploadPhoto(
+      { asset_id: assetId, file_path: filePath },
+      {
+        onError: (err) => {
+          setPhotoError(err instanceof Error ? err.message : "Error al subir la foto");
+        },
+      },
+    );
+  }
+
+  function handleDeletePhoto(photo: AssetPhoto) {
+    if (!window.confirm("¿Eliminar esta foto?")) return;
+    setPhotoError(null);
+    setPendingPhotoId(photo.photo_id);
+    deletePhoto(
+      { photoId: photo.photo_id, assetId },
+      {
+        onSuccess: () => setPendingPhotoId(null),
+        onError: (err) => {
+          setPendingPhotoId(null);
+          setPhotoError(err instanceof Error ? err.message : "Error al eliminar la foto");
+        },
+      },
+    );
+  }
+
+  function handleSetPrimary(photo: AssetPhoto) {
+    setPhotoError(null);
+    setPendingPhotoId(photo.photo_id);
+    setPrimary(
+      { photoId: photo.photo_id, assetId },
+      {
+        onSuccess: () => setPendingPhotoId(null),
+        onError: (err) => {
+          setPendingPhotoId(null);
+          setPhotoError(err instanceof Error ? err.message : "Error al cambiar la foto principal");
+        },
+      },
+    );
+  }
 
   // Maintenance form state
   const [isRegisteringMaintenance, setIsRegisteringMaintenance] =
@@ -1058,6 +1123,84 @@ export default function AssetDetail() {
                     value={asset.characteristics ?? "—"}
                   />
                 </dl>
+              )}
+            </div>
+
+            {/* Fotos del Activo — collapsible */}
+            <div className="mb-6 rounded-lg border border-border bg-[#f2e5bc]">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-6 py-4 text-left"
+                onClick={() => setIsPhotosSectionOpen((v) => !v)}
+                aria-expanded={isPhotosSectionOpen}
+              >
+                <h2 className="text-base font-semibold text-[#3c3836]">Fotos del Activo</h2>
+                <span className="text-sm text-[#665c54]">{isPhotosSectionOpen ? "▲" : "▼"}</span>
+              </button>
+              {isPhotosSectionOpen && (
+                <div className="px-6 pb-4">
+                  <button
+                    type="button"
+                    onClick={handleUploadPhoto}
+                    disabled={isUploading}
+                    className="mb-4 rounded-md bg-[#458588] px-4 py-2 text-sm font-medium text-white hover:bg-[#458588]/90 disabled:opacity-50"
+                  >
+                    {isUploading ? "Subiendo..." : "Agregar Foto"}
+                  </button>
+
+                  {photoError && (
+                    <p className="mb-3 text-xs text-[#9d0006]">{photoError}</p>
+                  )}
+
+                  {photosLoading ? (
+                    <p className="text-sm text-[#928374]">Cargando fotos...</p>
+                  ) : !assetPhotos || assetPhotos.length === 0 ? (
+                    <p className="text-sm text-[#7c6f64]">No hay fotos registradas para este activo.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                      {assetPhotos.map((photo) => {
+                        const isThisPending = pendingPhotoId === photo.photo_id;
+                        return (
+                          <div
+                            key={photo.photo_id}
+                            className="relative rounded-lg border border-[#d5c4a1] bg-[#ebdbb2] p-2"
+                          >
+                            <img
+                              src={toWebviewUrl(photo.file_path)}
+                              alt="Foto del activo"
+                              className="mb-2 h-32 w-full rounded object-cover"
+                            />
+                            {photo.is_primary === 1 && (
+                              <span className="mb-1 inline-block rounded-full bg-[#98971a]/20 px-2 py-0.5 text-xs font-medium text-[#98971a]">
+                                Principal
+                              </span>
+                            )}
+                            <div className="flex flex-wrap gap-1">
+                              {photo.is_primary !== 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetPrimary(photo)}
+                                  disabled={isThisPending}
+                                  className="rounded bg-[#458588]/10 px-2 py-1 text-xs text-[#458588] hover:bg-[#458588]/20 disabled:opacity-50"
+                                >
+                                  Marcar principal
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePhoto(photo)}
+                                disabled={isThisPending}
+                                className="rounded bg-[#cc241d]/10 px-2 py-1 text-xs text-[#cc241d] hover:bg-[#cc241d]/20 disabled:opacity-50"
+                              >
+                                {isThisPending ? "..." : "Eliminar"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -1734,6 +1877,7 @@ export default function AssetDetail() {
                     className={`${fieldClass("imported_accumulated_depreciation")} font-mono text-right`}
                     placeholder="0.00"
                   />
+                  {/* AC3: warning always visible (intentionally improved over spec's focus-only) */}
                   <p className="mt-1 text-xs text-[#d79921]">
                     ⚠ Modificar este valor recalculará el valor en libros del activo
                   </p>
@@ -1760,6 +1904,7 @@ export default function AssetDetail() {
                     className={`${fieldClass("additions_improvements")} font-mono text-right`}
                     placeholder="0.00"
                   />
+                  {/* AC3: warning always visible (intentionally improved over spec's focus-only) */}
                   <p className="mt-1 text-xs text-[#d79921]">
                     ⚠ Modificar afecta la base depreciable
                   </p>

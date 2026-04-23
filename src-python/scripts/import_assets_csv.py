@@ -8,12 +8,21 @@ connection, so the batch is atomic.
 
 Usage::
 
-    python -m scripts.import_assets_csv --csv "datos activos.csv" --db sgaf.db --dry-run
-    python scripts/import_assets_csv.py --csv "datos activos.csv" --db sgaf.db
+    PG_HOST=... PG_USER=... PG_PASS=... PG_DB=... \\
+        python -m scripts.import_assets_csv --csv "datos activos.csv" --dry-run
+    python scripts/import_assets_csv.py --csv "datos activos.csv"
+
+Connection is read from environment variables (same as the Flask app and
+migration runner):
+    PG_HOST  — Supabase/PostgreSQL host
+    PG_PORT  — port (default 5432)
+    PG_USER  — database user
+    PG_PASS  — database password
+    PG_DB    — database name
 
 Run ``--dry-run`` first. No rows are written when that flag is set.
 
-This is an ops tool, not an HTTP endpoint. It talks to SQLite directly and
+This is an ops tool, not an HTTP endpoint. It talks to PostgreSQL directly and
 bypasses the Flask validator — ``useful_life_months = 0`` is legal here (needed
 for TERRENOS) even though the HTTP ``POST /api/v1/assets/`` validator rejects
 it.
@@ -43,8 +52,9 @@ if str(_SRC_PYTHON) not in sys.path:
 
 import csv  # noqa: E402
 
-from sqlalchemy import create_engine, insert, select  # noqa: E402
+from sqlalchemy import insert, select  # noqa: E402
 
+from app.database import get_engine  # noqa: E402
 from app.models.tables import fixed_assets  # noqa: E402
 from app.utils.audit_logger import AuditLogger  # noqa: E402
 from app.utils.decimal_utils import to_db_string  # noqa: E402
@@ -354,21 +364,31 @@ def _read_csv_rows(
 
 def run_import(
     csv_path: pathlib.Path,
-    db_path: pathlib.Path,
     *,
     dry_run: bool,
     encoding: str = "cp1252",
     delimiter: str = ";",
     audit_logger: AuditLogger | None = None,
+    engine=None,
 ) -> ImportReport:
     """Entry point used by both the CLI and by tests.
 
+    Database connection is resolved via ``get_engine()`` which reads PG_*
+    environment variables (same as the Flask app). Pass ``engine`` explicitly
+    in tests to inject a local SQLite engine without needing real PG_* vars.
+
     Returns the :class:`ImportReport`; does not print (the CLI prints).
     """
+    from app.config import Config  # noqa: PLC0415 — lazy import to keep top-level clean
+
+    if engine is None:
+        db_label = f"{Config.PG_HOST}:{Config.PG_PORT}/{Config.PG_DB}"
+    else:
+        db_label = str(engine.url)
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     report = ImportReport(
         csv_path=str(csv_path),
-        db_path=str(db_path),
+        db_path=db_label,
         dry_run=dry_run,
         started_at=started_at,
     )
@@ -395,72 +415,71 @@ def run_import(
         parsed.append((idx, payload))
 
     # Phase 2 — duplicate detection (CSV-internal + against DB).
-    # H1 fix: engine is disposed in the finally block below.
-    engine = create_engine(f"sqlite:///{db_path}")
-    try:
-        with engine.connect() as conn:
-            existing_codes = {
-                row[0]
-                for row in conn.execute(select(fixed_assets.c.code)).fetchall()
-            }
+    # get_engine() raises RuntimeError with a clear message if PG_* vars are missing.
+    if engine is None:
+        engine = get_engine()
 
-        seen_in_csv: set[str] = set()
-        deduped: list[tuple[int, dict[str, Any]]] = []
-        for idx, payload in parsed:
-            code = payload["code"]
-            if code in existing_codes:
-                report.errors.append(
-                    (idx, code, "duplicate code — already exists in fixed_assets")
-                )
-                continue
-            if code in seen_in_csv:
-                report.errors.append(
-                    (idx, code, "duplicate code within CSV — first occurrence wins")
-                )
-                continue
-            seen_in_csv.add(code)
-            deduped.append((idx, payload))
+    with engine.connect() as conn:
+        existing_codes = {
+            row[0]
+            for row in conn.execute(select(fixed_assets.c.code)).fetchall()
+        }
 
-        # Phase 3 — commit (skipped on dry-run).
-        if dry_run:
-            return report
+    seen_in_csv: set[str] = set()
+    deduped: list[tuple[int, dict[str, Any]]] = []
+    for idx, payload in parsed:
+        code = payload["code"]
+        if code in existing_codes:
+            report.errors.append(
+                (idx, code, "duplicate code — already exists in fixed_assets")
+            )
+            continue
+        if code in seen_in_csv:
+            report.errors.append(
+                (idx, code, "duplicate code within CSV — first occurrence wins")
+            )
+            continue
+        seen_in_csv.add(code)
+        deduped.append((idx, payload))
 
-        logger = audit_logger or AuditLogger()
-        current_idx = 0
-        current_code = "?"
-        with engine.connect() as conn:
-            trans = conn.begin()
-            try:
-                for idx, payload in deduped:
-                    current_idx = idx
-                    current_code = payload["code"]
-                    result = conn.execute(insert(fixed_assets).values(**payload))
-                    new_id = result.lastrowid
-                    # M1 fix: pass started_at so audit timestamps match
-                    # fixed_assets.created_at — entire batch is co-timestamped
-                    # (Task 5.5: single import batch queryable as a unit).
-                    logger.log_change(
-                        entity_type="asset",
-                        entity_id=new_id,
-                        action="CREATE",
-                        actor="system",
-                        new_value=json.dumps(
-                            {"code": payload["code"], "category": payload["category"]},
-                            ensure_ascii=False,
-                        ),
-                        conn=conn,
-                        timestamp=started_at,
-                    )
-                    report.successful += 1
-                trans.commit()
-            except Exception as exc:  # noqa: BLE001 — atomic batch on any failure
-                trans.rollback()
-                report.errors.append(
-                    (current_idx, current_code, f"DB error — batch rolled back: {exc}")
+    # Phase 3 — commit (skipped on dry-run).
+    if dry_run:
+        return report
+
+    logger = audit_logger or AuditLogger()
+    current_idx = 0
+    current_code = "?"
+    with engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            for idx, payload in deduped:
+                current_idx = idx
+                current_code = payload["code"]
+                result = conn.execute(insert(fixed_assets).values(**payload))
+                new_id = result.inserted_primary_key[0]
+                # M1 fix: pass started_at so audit timestamps match
+                # fixed_assets.created_at — entire batch is co-timestamped
+                # (Task 5.5: single import batch queryable as a unit).
+                logger.log_change(
+                    entity_type="asset",
+                    entity_id=new_id,
+                    action="CREATE",
+                    actor="system",
+                    new_value=json.dumps(
+                        {"code": payload["code"], "category": payload["category"]},
+                        ensure_ascii=False,
+                    ),
+                    conn=conn,
+                    timestamp=started_at,
                 )
-                report.successful = 0  # nothing persisted
-    finally:
-        engine.dispose()
+                report.successful += 1
+            trans.commit()
+        except Exception as exc:  # noqa: BLE001 — atomic batch on any failure
+            trans.rollback()
+            report.errors.append(
+                (current_idx, current_code, f"DB error — batch rolled back: {exc}")
+            )
+            report.successful = 0  # nothing persisted
 
     return report
 
@@ -472,10 +491,12 @@ def run_import(
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Import legacy fixed-asset CSV into SGAF SQLite database.",
+        description=(
+            "Import legacy fixed-asset CSV into SGAF PostgreSQL (Supabase) database.\n"
+            "Connection is read from env vars: PG_HOST, PG_PORT, PG_USER, PG_PASS, PG_DB."
+        ),
     )
     parser.add_argument("--csv", required=True, help="Path to input CSV file")
-    parser.add_argument("--db", required=True, help="Path to target SQLite database")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -499,23 +520,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     csv_path = pathlib.Path(args.csv)
-    db_path = pathlib.Path(args.db)
 
     if not csv_path.is_file():
         print(f"ERROR: CSV file not found: {csv_path}", file=sys.stderr)
         return 1
-    if not db_path.is_file():
-        print(f"ERROR: DB file not found: {db_path}", file=sys.stderr)
+
+    # Validate PG_* env vars before attempting any DB work.
+    from app.config import Config  # noqa: PLC0415
+
+    missing = [v for v in ("PG_HOST", "PG_USER", "PG_PASS", "PG_DB") if not getattr(Config, v)]
+    if missing:
+        print(
+            f"ERROR: faltan variables de entorno: {', '.join(missing)}. "
+            "Configura PG_HOST, PG_PORT, PG_USER, PG_PASS, PG_DB antes de ejecutar.",
+            file=sys.stderr,
+        )
         return 1
 
+    db_label = f"{Config.PG_HOST}:{Config.PG_PORT}/{Config.PG_DB}"
     print(
-        f"Import script — CSV: {csv_path}, DB: {db_path}, DRY-RUN: {args.dry_run}"
+        f"Import script — CSV: {csv_path}, DB: {db_label}, DRY-RUN: {args.dry_run}"
     )
 
     try:
         report = run_import(
             csv_path=csv_path,
-            db_path=db_path,
             dry_run=args.dry_run,
             encoding=args.encoding,
             delimiter=args.delimiter,
